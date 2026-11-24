@@ -224,7 +224,7 @@ async function init() {
   setupLog();
 
   const ver = $('#ver');
-  ver.textContent = `v${__APP_VERSION__}・${__BUILD_TIME__}`;
+  ver.textContent = `v${__APP_VERSION__}`;
   ver.title = `ビルド ${__BUILD_TIME__}`;
 
   const d = new Date(meta.updatedAt);
