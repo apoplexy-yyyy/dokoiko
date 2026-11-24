@@ -17,7 +17,7 @@ export const CAT: Record<Category, { label: string; icon: string; color: string 
 
 export const FEAT: Record<Feature, { label: string; icon: string }> = {
   playground: { label: '遊具', icon: '🛝' },
-  toilets: { label: 'トイレ', icon: '🚻' },
+  toilets: { label: 'トイレ有', icon: '🚻' },
   free: { label: '無料', icon: '🆓' },
   wheelchair: { label: 'バリアフリー', icon: '♿' },
   baby: { label: 'おむつ替え', icon: '🍼' },

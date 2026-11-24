@@ -50,7 +50,7 @@
   "excludeNameByCategory": {
     "library": "大学|附属|学園|高校|高等学校|中学校|小学校|研究所|専門",
     "museum": "大学|研究所|専門店|店$|販売|ショップ",
-    "water": "学校|高校|大学|中学|会員|ジム"
+    "water": "学校|高校|大学|中学|会員|ジム|競泳|飛込|用プール"
   },
   "excludeAccess": ["private", "no", "customers", "members"]
 }

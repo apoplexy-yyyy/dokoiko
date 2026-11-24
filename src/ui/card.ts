@@ -8,6 +8,8 @@ export interface CardContext {
   index: number;
   distKm?: number;
   distFrom: string;
+  /** このスポットの特徴語（珍しいものだけ） */
+  tags: string[];
   isNew: boolean;
   spotNews: NewsItem[];
   cityNews: NewsItem[];
@@ -108,6 +110,7 @@ export function renderCard(s: Spot, ctx: CardContext): HTMLElement {
       { class: 'card-body' },
       h('p', { class: 'card-kicker' }, h('span', { class: 'cat' }, `${c.icon} ${c.label}`), ctx.distKm != null ? h('span', {}, `${ctx.distFrom}${travelText(ctx.distKm)}`) : null),
       h('h3', {}, s.name),
+      ctx.tags.length ? h('p', { class: 'tags' }, ...ctx.tags.map((t) => h('span', { class: 'tag' }, `#${t}`))) : null,
       s.city ? h('p', { class: 'city' }, s.city) : null,
       s.f.length ? h('ul', { class: 'feats' }, ...s.f.map((f) =>
               h('li', {}, `${FEAT[f].icon} ${FEAT[f].label}${f === 'large' && s.ha ? `（約${s.ha}ha）` : ''}`),

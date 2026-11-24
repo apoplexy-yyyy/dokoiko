@@ -51,6 +51,14 @@ export interface Spot {
   rich: number; // 情報の充実度 0-1
   apl: number; // 行く価値（広さ・施設の種類）0-1
   ha?: number; // 広い公園のおおよその面積(ha)
+  t?: number[]; // 特徴語（Meta.terms の添字）
+  tl?: string[]; // 収集時のみ使う特徴語ラベル（出力前に t に変換して削除）
+}
+
+/** 特徴語と、県全体での珍しさ（IDF = ln(全スポット数 / その語を持つスポット数)） */
+export interface Term {
+  label: string;
+  idf: number;
 }
 
 export interface NewsItem {
@@ -84,6 +92,7 @@ export interface Meta {
   center: [number, number];
   cities: CityInfo[];
   sources: { name: string; license: string; url: string }[];
+  terms: Term[];
 }
 
 export function tileKey(lat: number, lon: number, size: number): string {

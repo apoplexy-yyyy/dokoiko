@@ -1,6 +1,7 @@
 // スポット化・スコアリング・重複除去・ニュース照合（純粋関数。単体テスト対象）
 import categories from '../../config/categories.json' with { type: 'json' };
 import type { Category, Feature, NewsItem, Spot, SpotImage } from '../../src/types.ts';
+import { extractTerms } from './terms.ts';
 
 export interface RawLike {
   id: string;
@@ -161,6 +162,7 @@ export function toSpot(raw: RawLike, en: Enrich, near: { playgrounds: PointIndex
   if (en.desc) spot.desc = en.desc;
   if (en.wpTitle && en.wpExtract) spot.wp = { title: en.wpTitle, extract: en.wpExtract };
   if (en.img) spot.img = en.img;
+  spot.tl = extractTerms(t, name, largeArea);
   return spot;
 }
 

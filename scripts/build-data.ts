@@ -5,7 +5,8 @@ import region from '../config/region.json' with { type: 'json' };
 import feeds from '../config/feeds.json' with { type: 'json' };
 import { isMain, readWork, writeJson } from './lib/work.ts';
 import { PointIndex, dedupe, matchNews, toSpot } from './lib/score.ts';
-import { tileKey, type CityInfo, type Meta, type NewsData, type Spot } from '../src/types.ts';
+import { computeIdf } from './lib/terms.ts';
+import { tileKey, type CityInfo, type Meta, type NewsData, type Spot, type Term } from '../src/types.ts';
 import type { OsmWork } from './collect-osm.ts';
 import type { WdInfo } from './enrich-wikidata.ts';
 import type { WpWork } from './enrich-wikipedia.ts';
@@ -17,8 +18,10 @@ import type { RawNews } from './collect-news.ts';
 const OUT = join('public', 'data', region.id);
 
 /** 広域表示用のおすすめを選ぶ（カテゴリごと上位60件＋市区町村ごと上位6件） */
-export function pickHighlights(spots: Spot[]): Spot[] {
-  const score = (s: Spot) => s.kid * s.apl * (0.4 + 0.6 * s.nov) * (0.5 + s.rich);
+export function pickHighlights(spots: Spot[], terms: Term[] = []): Spot[] {
+  const maxIdf = Math.max(1, ...terms.map((t) => t.idf));
+  const rare = (s: Spot) => Math.max(0, ...(s.t ?? []).map((i) => terms[i]?.idf ?? 0)) / maxIdf;
+  const score = (s: Spot) => s.kid * s.apl * (0.4 + 0.6 * s.nov) * (0.5 + s.rich) * (0.3 + 0.7 * rare(s));
   const sorted = [...spots].sort((a, b) => score(b) - score(a));
   const chosen = new Map<string, Spot>();
   const take = (key: (s: Spot) => string | undefined, n: number) => {
@@ -73,6 +76,15 @@ export async function buildData() {
   const matched = matchNews(spots, news, municipalities, feeds.keywords, feeds.excludeKeywords);
   for (const s of spots) if (matched.bySpot[s.id]) s.rich = Math.min(1, Math.round((s.rich + 0.1) * 100) / 100);
 
+  // 特徴語の IDF（県全体での珍しさ）を計算し、スポットには語の添字だけを持たせる
+  const idf = computeIdf(spots.map((s) => s.tl ?? []));
+  const termList: Term[] = [...idf].map(([label, v]) => ({ label, idf: v })).sort((a, b) => b.idf - a.idf);
+  const termIndex = new Map(termList.map((t, i) => [t.label, i]));
+  for (const s of spots) {
+    if (s.tl?.length) s.t = s.tl.map((l) => termIndex.get(l)!);
+    delete s.tl;
+  }
+
   // タイル分割
   const tiles = new Map<string, Spot[]>();
   for (const s of spots) {
@@ -83,7 +95,7 @@ export async function buildData() {
   for (const [k, list] of tiles) await writeJson(join(OUT, 'tiles', `${k}.json`), list);
 
   // 広域表示用のおすすめ：ジャンルごとの上位＋市区町村ごとの上位（県全体を読み込まずに済むように）
-  const highlights = pickHighlights(spots);
+  const highlights = pickHighlights(spots, termList);
   await writeJson(join(OUT, 'highlights.json'), highlights);
 
   // 市区町村（起点選択用）：スポットの平均位置
@@ -111,6 +123,7 @@ export async function buildData() {
     bbox: region.bbox as Meta['bbox'],
     center: region.center as Meta['center'],
     cities,
+    terms: termList,
     sources: [
       { name: 'OpenStreetMap', license: 'ODbL', url: 'https://www.openstreetmap.org/copyright' },
       { name: 'Wikidata', license: 'CC0', url: 'https://www.wikidata.org/' },

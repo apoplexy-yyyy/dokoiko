@@ -1,6 +1,6 @@
 import './styles.css';
 import { DETAIL_ZOOM, loadBounds, loadHighlights, loadMeta, loadNews } from './data/loader';
-import { distKm, rankInView, todaySeed } from './discover/pick';
+import { distKm, rankInView, todaySeed, type AreaKeyword } from './discover/pick';
 import type { Meta, NewsData, NewsItem, Spot } from './types';
 import { renderCard } from './ui/card';
 import { $, h, safeUrl } from './ui/dom';
@@ -66,20 +66,21 @@ async function refresh() {
   const news = await loadNews();
   if (req !== state.req) return; // 古い要求は捨てる
 
-  const { picks, total } = rankInView(spots, b, {
+  const { picks, total, keywords } = rankInView(spots, b, {
     count: COUNT,
     rainy: state.rainy,
     seen: state.seenAtLoad,
     skip: state.skip,
     seed: state.seed,
+    terms: state.meta.terms,
   });
   state.picks = picks;
-  render(picks, total, wide, news);
+  render(picks, total, wide, news, keywords);
   for (const s of picks) history.add('seen', s);
   updateCounts();
 }
 
-function render(picks: Spot[], total: number, wide: boolean, news: NewsData | null) {
+function render(picks: Spot[], total: number, wide: boolean, news: NewsData | null, keywords: AreaKeyword[]) {
   const box = $('#results');
   box.replaceChildren();
   map.showPicks(picks, (id) => {
@@ -97,6 +98,15 @@ function render(picks: Spot[], total: number, wide: boolean, news: NewsData | nu
       wide ? `${state.meta!.name}のおすすめから ${picks.length} か所` : `この範囲の ${total.toLocaleString()} か所から ${picks.length} か所を発見`,
     ),
   );
+  if (keywords.length)
+    box.append(
+      h(
+        'div',
+        { class: 'area-keywords' },
+        h('span', { class: 'area-keywords-label' }, wide ? '県内の特徴' : 'この範囲の特徴'),
+        ...keywords.map((k) => h('span', { class: 'kw' }, k.count > 1 ? `${k.label} ${k.count}` : k.label)),
+      ),
+    );
   if (wide) box.append(h('p', { class: 'hint' }, '地図を拡大すると、近所の知らなかった場所が出てきます。'));
 
   const ref = state.here ?? map.center;
@@ -107,6 +117,7 @@ function render(picks: Spot[], total: number, wide: boolean, news: NewsData | nu
       isNew: !state.seenAtLoad.has(s.id),
       distKm: distKm(ref[0], ref[1], s.lat, s.lon),
       distFrom: state.here ? '現在地から ' : '地図の中心から ',
+      tags: (s.t ?? []).map((i) => state.meta!.terms[i]).filter((t) => t && t.idf >= 1.5).map((t) => t.label),
       ...newsFor(s, news),
       onReplace: () => {
         state.skip.add(s.id);

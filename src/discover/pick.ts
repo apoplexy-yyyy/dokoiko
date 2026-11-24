@@ -1,7 +1,7 @@
 // 発見ロジック：地図の表示範囲にあるスポットから
 // 「子供向け × 行く価値 × 意外性 × 情報量 × まだ見ていない」で重み付けし、ジャンルが偏らないように選ぶ。
 // 乱数は「スポットID＋今日の日付」から決まるので、同じ日・同じ範囲なら地図を少し動かしても結果が入れ替わらない。
-import type { Category, Spot } from '../types';
+import type { Category, Spot, Term } from '../types';
 
 export interface Bounds {
   south: number;
@@ -16,6 +16,8 @@ export interface RankOptions {
   seen: ReadonlySet<string>;
   skip?: ReadonlySet<string>;
   seed: string;
+  /** 特徴語の一覧（Meta.terms）。あれば TF-IDF で重み付けする */
+  terms?: Term[];
 }
 
 /** ジャンルのグループと、そのグループが選ばれる目安の割合 */
@@ -64,18 +66,62 @@ export function hash01(s: string): number {
 
 export const inBounds = (s: Spot, b: Bounds) => s.lat >= b.south && s.lat <= b.north && s.lon >= b.west && s.lon <= b.east;
 
+export interface AreaKeyword {
+  label: string;
+  count: number;
+}
+
+/** これより IDF が小さい語（公園など、どこにでもある語）は「この範囲の特徴」に出さない */
+const COMMON_IDF = 1.5;
+
+/**
+ * 表示範囲の TF-IDF。語の重み = (1 + ln 範囲内の出現数) × IDF（県全体での珍しさ）。
+ * どこにでもある語（公園）は低く、県内では珍しいがこの範囲にある語（滝・古墳・梅林など）は高くなる。
+ * スポットの特徴度 = 持っている語の重みの最大値を、範囲内の最大値で割ったもの（0〜1）。
+ */
+export function areaTfIdf(spots: Spot[], terms: Term[]): { score: Map<string, number>; keywords: AreaKeyword[] } {
+  const count = new Map<number, number>();
+  for (const s of spots) for (const t of s.t ?? []) count.set(t, (count.get(t) ?? 0) + 1);
+  const tfidf = new Map<number, number>();
+  for (const [t, c] of count) tfidf.set(t, (1 + Math.log(c)) * (terms[t]?.idf ?? 0));
+
+  const raw = new Map<string, number>();
+  let max = 0;
+  for (const s of spots) {
+    const v = Math.max(0, ...(s.t ?? []).map((t) => tfidf.get(t) ?? 0));
+    raw.set(s.id, v);
+    max = Math.max(max, v);
+  }
+  const score = new Map([...raw].map(([id, v]) => [id, max > 0 ? v / max : 0]));
+  const keywords = [...tfidf]
+    .filter(([t]) => (terms[t]?.idf ?? 0) >= COMMON_IDF)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6)
+    .map(([t]) => ({ label: terms[t].label, count: count.get(t)! }));
+  return { score, keywords };
+}
+
 /**
  * 表示範囲から count 件を選ぶ。
+ * 基本の重みに「この範囲での特徴度（TF-IDF）」を掛け、
  * 重み付きランダム（u^(1/w) の大きい順＝Efraimidis–Spirakis法）でグループ内の順位を決め、
  * グループごとの目安割合に従って枠を配る。
  */
-export function rankInView(spots: Spot[], bounds: Bounds, opts: RankOptions): { picks: Spot[]; total: number } {
+export function rankInView(
+  spots: Spot[],
+  bounds: Bounds,
+  opts: RankOptions,
+): { picks: Spot[]; total: number; keywords: AreaKeyword[] } {
+  const inView = spots.filter((s) => inBounds(s, bounds) && !opts.skip?.has(s.id));
+  const { score, keywords } = areaTfIdf(inView, opts.terms ?? []);
+  const useTfIdf = !!opts.terms?.length;
+
   let pool: { s: Spot; w: number; key: number; g: string }[] = [];
-  for (const s of spots) {
-    if (!inBounds(s, bounds) || opts.skip?.has(s.id)) continue;
-    const w = weight(s, opts);
+  for (const s of inView) {
+    let w = weight(s, opts);
+    if (useTfIdf) w *= 0.15 + 0.85 * (score.get(s.id) ?? 0);
     if (w <= 0) continue;
-    pool.push({ s, w, key: Math.log(hash01(opts.seed + ":" + s.id)) / w, g: groupOf.get(s.cat) ?? 'fun' });
+    pool.push({ s, w, key: Math.log(hash01(opts.seed + ':' + s.id)) / w, g: groupOf.get(s.cat) ?? 'fun' });
   }
   const total = pool.length;
   if (opts.rainy) {
@@ -107,7 +153,7 @@ export function rankInView(spots: Spot[], bounds: Bounds, opts: RankOptions): { 
     picks.push(chosen.s);
     catUsed.set(chosen.s.cat, (catUsed.get(chosen.s.cat) ?? 0) + 1);
   }
-  return { picks, total };
+  return { picks, total, keywords };
 }
 
 /** 今日の日付（ローカル）を乱数の種にする */
