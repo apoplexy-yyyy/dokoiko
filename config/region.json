@@ -1,0 +1,10 @@
+{
+  "id": "kanagawa",
+  "name": "神奈川県",
+  "iso": "JP-14",
+  "wikidata": "Q127513",
+  "cityAdminLevels": ["7"],
+  "bbox": [35.12, 138.91, 35.68, 139.80],
+  "center": [35.45, 139.40],
+  "tileSize": 0.05
+}
