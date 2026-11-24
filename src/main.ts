@@ -223,6 +223,10 @@ async function init() {
   });
   setupLog();
 
+  const ver = $('#ver');
+  ver.textContent = `v${__APP_VERSION__}・${__BUILD_TIME__}`;
+  ver.title = `ビルド ${__BUILD_TIME__}`;
+
   const d = new Date(meta.updatedAt);
   $('#updated').textContent = `${meta.name}の ${meta.count.toLocaleString()} か所を収録・データ更新 ${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
   $('#sources').replaceChildren(
