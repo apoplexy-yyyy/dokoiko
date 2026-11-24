@@ -46,7 +46,16 @@ export class DiscoverMap {
   }
 
   flyTo(lat: number, lon: number, zoom: number) {
-    this.map.flyTo([lat, lon], zoom, { duration: 0.8 });
+    // 非表示のタブなどでアニメーションが止まった場合に備え、終わらなければ即座に移動する
+    let arrived = false;
+    this.map.once('moveend', () => (arrived = true));
+    if (document.hidden) this.map.setView([lat, lon], zoom, { animate: false });
+    else this.map.flyTo([lat, lon], zoom, { duration: 0.8 });
+    setTimeout(() => {
+      if (arrived) return;
+      this.map.stop();
+      this.map.setView([lat, lon], zoom, { animate: false });
+    }, 1500);
   }
 
   setHere(lat: number, lon: number) {
