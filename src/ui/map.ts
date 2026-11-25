@@ -2,7 +2,7 @@
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { Bounds } from '../discover/pick';
-import type { Spot } from '../types';
+import type { EventItem, Spot } from '../types';
 import type { SavedSpot } from './history';
 import { CAT } from './labels';
 
@@ -11,6 +11,8 @@ export class DiscoverMap {
   private hereLayer = L.layerGroup();
   private pickLayer = L.layerGroup();
   private foundLayer = L.layerGroup();
+  private eventLayer = L.layerGroup();
+  private eventMarkers = new Map<string, L.Marker>();
   private pickMarkers = new Map<string, L.Marker>();
   private timer = 0;
 
@@ -21,6 +23,7 @@ export class DiscoverMap {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     }).addTo(this.map);
     this.foundLayer.addTo(this.map);
+    this.eventLayer.addTo(this.map);
     this.hereLayer.addTo(this.map);
     this.pickLayer.addTo(this.map);
     // 連続した移動はまとめて1回だけ通知
@@ -86,6 +89,41 @@ export class DiscoverMap {
       m.addTo(this.pickLayer);
       this.pickMarkers.set(s.id, m);
     });
+  }
+
+  /** イベント会場（座標が分かるものだけ）。同じ会場は1つのピンにまとめる */
+  showEvents(list: EventItem[], onSelect: (id: string) => void) {
+    this.eventLayer.clearLayers();
+    this.eventMarkers.clear();
+    const byPlace = new Map<string, EventItem[]>();
+    for (const ev of list) {
+      if (ev.approx) continue;
+      const k = `${ev.lat.toFixed(4)},${ev.lon.toFixed(4)}`;
+      byPlace.set(k, [...(byPlace.get(k) ?? []), ev]);
+    }
+    for (const evs of byPlace.values()) {
+      const m = L.marker([evs[0].lat, evs[0].lon], {
+        icon: L.divIcon({
+          className: 'event-pin',
+          html: `<span>🗓️${evs.length > 1 ? `<b>${evs.length}</b>` : ''}</span>`,
+          iconSize: [30, 30],
+          iconAnchor: [15, 15],
+        }),
+        title: evs.map((e) => e.title).join(' / '),
+        riseOnHover: true,
+      });
+      m.on('click', () => onSelect(evs[0].id));
+      m.addTo(this.eventLayer);
+      for (const e of evs) this.eventMarkers.set(e.id, m);
+    }
+  }
+
+  highlightEvent(id: string) {
+    const el = this.eventMarkers.get(id)?.getElement();
+    if (!el) return;
+    el.classList.remove('bounce');
+    void el.offsetWidth;
+    el.classList.add('bounce');
   }
 
   /** ピンを跳ねさせる（地図は動かさない＝候補が入れ替わらない） */

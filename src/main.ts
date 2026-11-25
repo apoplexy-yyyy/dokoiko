@@ -1,19 +1,25 @@
 import './styles.css';
-import { DETAIL_ZOOM, loadBounds, loadHighlights, loadMeta, loadNews } from './data/loader';
+import { DETAIL_ZOOM, loadBounds, loadEvents, loadHighlights, loadMeta, loadNews } from './data/loader';
+import { eventsInView, WHEN_LABEL, whenDays, type EventHit, type When } from './discover/events';
 import { distKm, rankInView, todaySeed, type AreaKeyword } from './discover/pick';
-import type { Meta, NewsData, NewsItem, Spot } from './types';
+import type { EventItem, EventsData, Meta, NewsData, NewsItem, Spot } from './types';
 import { renderCard } from './ui/card';
 import { $, h, safeUrl } from './ui/dom';
 import { history } from './ui/history';
 import { CAT } from './ui/labels';
+import { eventItem } from './ui/events';
 import { DiscoverMap } from './ui/map';
 
 const COUNT = 6;
+/** イベントを最初に並べる件数（「もっと見る」で全部） */
+const EVENT_COUNT = 5;
 
 const state = {
   meta: null as Meta | null,
   here: null as [number, number] | null, // 現在地（取得できたときだけ）
   rainy: false,
+  when: history.prefs.get<When>('when', 'weekend'),
+  eventsOpen: false,
   picks: [] as Spot[],
   skip: new Set<string>(), // 「ほかの場所」で外したもの
   seenAtLoad: history.ids('seen'), // 起動時点で見たことのある場所（表示中に順位が変わらないよう固定）
@@ -63,7 +69,7 @@ async function refresh() {
   const wide = map.zoom < DETAIL_ZOOM;
   const b = map.bounds();
   const spots = wide ? await loadHighlights() : await loadBounds(state.meta, b);
-  const news = await loadNews();
+  const [news, events] = await Promise.all([loadNews(), loadEvents()]);
   if (req !== state.req) return; // 古い要求は捨てる
 
   const { picks, total, keywords } = rankInView(spots, b, {
@@ -75,14 +81,78 @@ async function refresh() {
     terms: state.meta.terms,
   });
   state.picks = picks;
-  render(picks, total, wide, news, keywords);
+  render(picks, total, wide, news, keywords, events);
   for (const s of picks) history.add('seen', s);
   updateCounts();
 }
 
-function render(picks: Spot[], total: number, wide: boolean, news: NewsData | null, keywords: AreaKeyword[]) {
+/** 表示範囲のイベント欄 */
+function renderEvents(box: HTMLElement, data: EventsData | null, b: ReturnType<DiscoverMap['bounds']>, wide: boolean) {
+  const sec = h('section', { class: 'events', 'aria-label': 'イベント' });
+  const seg = h('div', { class: 'seg', role: 'group', 'aria-label': 'イベントの日付' });
+  for (const w of Object.keys(WHEN_LABEL) as When[]) {
+    const btn = h('button', { type: 'button', 'aria-pressed': String(state.when === w) }, WHEN_LABEL[w]);
+    btn.addEventListener('click', () => {
+      state.when = w;
+      state.eventsOpen = false;
+      history.prefs.set('when', w);
+      refresh();
+    });
+    seg.append(btn);
+  }
+  const all = data?.events ?? [];
+  const hits = eventsInView(all, b, whenDays(state.when));
+  sec.append(
+    h('div', { class: 'events-head' }, h('h2', { class: 'results-title' }, `🗓️ ${wide ? '' : 'この範囲の'}${WHEN_LABEL[state.when]}のイベント`, hits.length ? h('span', { class: 'count' }, ` ${hits.length}件`) : null), seg),
+  );
+  map.showEvents(hits.map((x) => x.ev), (id) => {
+    document.querySelector(`.ev[data-ev="${CSS.escape(id)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  });
+
+  if (!hits.length) {
+    const soon = state.when === 'soon' ? [] : eventsInView(all, b, whenDays('soon'));
+    const p = h('p', { class: 'hint' }, all.length && !inAreaWithEvents(all, b) ? 'この範囲のイベント情報はまだありません（いまは川崎市・横浜市のみ）。' : `この範囲には${WHEN_LABEL[state.when]}のイベントがありません。`);
+    if (soon.length) {
+      const more = h('button', { type: 'button', class: 'link-btn' }, `2週間以内なら ${soon.length} 件 →`);
+      more.addEventListener('click', () => {
+        state.when = 'soon';
+        history.prefs.set('when', 'soon');
+        refresh();
+      });
+      p.append(' ', more);
+    }
+    sec.append(p);
+    box.append(sec);
+    return;
+  }
+  const shown: EventHit[] = state.eventsOpen ? hits.slice(0, 60) : hits.slice(0, EVENT_COUNT);
+  sec.append(
+    h(
+      'ul',
+      { class: 'ev-list' },
+      ...shown.map((x) => eventItem(x, (ev: EventItem) => map.highlightEvent(ev.id))),
+    ),
+  );
+  if (hits.length > shown.length) {
+    const more = h('button', { type: 'button', class: 'link-btn' }, `ほか ${hits.length - shown.length} 件を見る`);
+    more.addEventListener('click', () => {
+      state.eventsOpen = true;
+      refresh();
+    });
+    sec.append(more);
+  }
+  box.append(sec);
+}
+
+/** 表示範囲に、イベント情報のある地域（過去・未来を問わず1件でも）が含まれるか */
+function inAreaWithEvents(all: EventItem[], b: ReturnType<DiscoverMap['bounds']>) {
+  return all.some((e) => e.lat >= b.south && e.lat <= b.north && e.lon >= b.west && e.lon <= b.east);
+}
+
+function render(picks: Spot[], total: number, wide: boolean, news: NewsData | null, keywords: AreaKeyword[], events: EventsData | null) {
   const box = $('#results');
   box.replaceChildren();
+  renderEvents(box, events, map.bounds(), wide);
   map.showPicks(picks, (id) => {
     document.querySelector(`.card[data-id="${CSS.escape(id)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   });
@@ -93,9 +163,9 @@ function render(picks: Spot[], total: number, wide: boolean, news: NewsData | nu
   }
   box.append(
     h(
-      'p',
+      'h2',
       { class: 'results-title' },
-      wide ? `${state.meta!.name}のおすすめから ${picks.length} か所` : `この範囲の ${total.toLocaleString()} か所から ${picks.length} か所を発見`,
+      wide ? `📍 ${state.meta!.name}のおすすめから ${picks.length} か所` : `📍 この範囲の ${total.toLocaleString()} か所から ${picks.length} か所を発見`,
     ),
   );
   if (keywords.length)
@@ -119,6 +189,7 @@ function render(picks: Spot[], total: number, wide: boolean, news: NewsData | nu
       distFrom: state.here ? '現在地から ' : '地図の中心から ',
       tags: (s.t ?? []).map((i) => state.meta!.terms[i]).filter((t) => t && t.idf >= 1.5).map((t) => t.label),
       ...newsFor(s, news),
+      events: (events?.events ?? []).filter((e) => e.spot === s.id),
       onReplace: () => {
         state.skip.add(s.id);
         refresh();
@@ -233,6 +304,14 @@ async function init() {
     '出典：',
     ...meta.sources.flatMap((s, i) => [i ? '、' : '', h('a', { href: safeUrl(s.url), target: '_blank', rel: 'noopener' }, s.name), `（${s.license}）`]),
   );
+
+  loadEvents().then((ev) => {
+    if (!ev) return;
+    $('#sources').append(
+      '、イベント：',
+      ...ev.sources.flatMap((s, i) => [i ? '、' : '', h('a', { href: safeUrl(s.url), target: '_blank', rel: 'noopener' }, s.name), `（${s.license}）`]),
+    );
+  });
 
   updateCounts();
   window.addEventListener('resize', () => map.invalidate());

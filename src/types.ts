@@ -98,3 +98,29 @@ export interface Meta {
 export function tileKey(lat: number, lon: number, size: number): string {
   return `${Math.floor(lon / size)}_${Math.floor(lat / size)}`;
 }
+
+/** 子供向けイベント（自治体のイベント情報から毎日収集） */
+export interface EventItem {
+  id: string;
+  title: string;
+  dates: string[]; // 開催日 YYYY-MM-DD（収集日以降・昇順）
+  time?: string; // 「14:00〜16:00」
+  lat: number;
+  lon: number;
+  /** true なら会場の座標が無く、区・市の中心で代用している */
+  approx?: boolean;
+  city: string; // 川崎市中原区 など
+  venue?: string;
+  target?: string; // 乳児,幼児,小学生 など
+  cost?: string;
+  url: string;
+  src: string; // 出典名
+  spot?: string; // 会場と一致したスポットID
+  spotName?: string;
+}
+
+export interface EventsData {
+  updatedAt: string;
+  events: EventItem[];
+  sources: { name: string; license: string; url: string }[];
+}

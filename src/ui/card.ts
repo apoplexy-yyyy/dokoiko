@@ -1,5 +1,6 @@
 // 発見カード：行ってみたくなる情報（写真・特徴・説明・新着）と行動ボタン
-import type { NewsItem, Spot } from '../types';
+import type { EventItem, NewsItem, Spot } from '../types';
+import { spotEvents } from './events';
 import { h, safeUrl } from './dom';
 import { history } from './history';
 import { CAT, FEAT, travelText } from './labels';
@@ -13,6 +14,8 @@ export interface CardContext {
   isNew: boolean;
   spotNews: NewsItem[];
   cityNews: NewsItem[];
+  /** この施設で開催予定のイベント */
+  events: EventItem[];
   onReplace: () => void;
   onFocus: () => void;
   onChange: () => void;
@@ -116,6 +119,7 @@ export function renderCard(s: Spot, ctx: CardContext): HTMLElement {
               h('li', {}, `${FEAT[f].icon} ${FEAT[f].label}${f === 'large' && s.ha ? `（約${s.ha}ha）` : ''}`),
             )) : null,
       descEl,
+      spotEvents(ctx.events),
       newsList('📰 この場所の新着', ctx.spotNews),
       newsList('🗓️ このまちの子供向け情報', ctx.cityNews),
       s.hours ? h('p', { class: 'meta' }, `🕘 ${s.hours}`) : null,

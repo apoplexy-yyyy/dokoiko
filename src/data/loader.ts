@@ -1,5 +1,5 @@
 // 静的JSONの読み込み：広域表示ではおすすめ（highlights.json）だけ、拡大時は表示範囲のタイルだけを取得する
-import { type Meta, type NewsData, type Spot } from '../types';
+import { type EventsData, type Meta, type NewsData, type Spot } from '../types';
 import type { Bounds } from '../discover/pick';
 
 const BASE = `${import.meta.env.BASE_URL}data/kanagawa/`;
@@ -23,6 +23,15 @@ let newsPromise: Promise<NewsData | null> | undefined;
 export function loadNews(): Promise<NewsData | null> {
   newsPromise ??= getJson<NewsData | null>(BASE + 'news.json', null);
   return newsPromise;
+}
+
+let eventsPromise: Promise<EventsData | null> | undefined;
+/** イベントは毎日更新されるので、ブラウザのキャッシュを使わず確認する */
+export function loadEvents(): Promise<EventsData | null> {
+  eventsPromise ??= fetch(BASE + 'events.json', { cache: 'no-cache' })
+    .then((r) => (r.ok ? (r.json() as Promise<EventsData>) : null))
+    .catch(() => null);
+  return eventsPromise;
 }
 
 let highlightsPromise: Promise<Spot[]> | undefined;

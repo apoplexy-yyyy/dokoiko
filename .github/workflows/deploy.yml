@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   workflow_run:
-    workflows: ['データ収集（週次）']
+    workflows: ['データ収集（週次）', 'イベント収集（毎日）']
     types: [completed]
   workflow_dispatch:
 

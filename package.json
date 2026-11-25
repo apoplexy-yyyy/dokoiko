@@ -1,7 +1,7 @@
 {
   "name": "dokoiko",
   "private": true,
-  "version": "0.5.3",
+  "version": "0.6.0",
   "type": "module",
   "description": "どこいこ - 子供とのお出かけ先を偶然発見する静的Webアプリ",
   "scripts": {
@@ -13,6 +13,7 @@
     "collect": "tsx scripts/collect-all.ts",
     "collect:osm": "tsx scripts/collect-osm.ts",
     "collect:news": "tsx scripts/collect-news.ts",
+    "collect:events": "tsx scripts/collect-events.ts",
     "build:data": "tsx scripts/build-data.ts"
   },
   "dependencies": {

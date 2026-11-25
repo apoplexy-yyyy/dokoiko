@@ -1,0 +1,38 @@
+name: イベント収集（毎日）
+
+on:
+  schedule:
+    - cron: '0 20 * * *' # 毎日 05:00 JST
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: collect
+  cancel-in-progress: false
+
+jobs:
+  events:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: イベント収集
+        run: npm run collect:events
+      - name: 変更があればコミット
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/data/kanagawa/events.json
+          if git diff --cached --quiet; then
+            echo "イベントに変更なし"
+          else
+            git commit -m "data: イベント更新 $(date -u +%Y-%m-%d)"
+            git push
+          fi

@@ -9,6 +9,7 @@ import { enrichCommons } from './enrich-commons.ts';
 import { enrichCommonsGeo } from './enrich-commons-geo.ts';
 import { collectNews } from './collect-news.ts';
 import { buildData } from './build-data.ts';
+import { collectEvents } from './collect-events.ts';
 
 async function step(name: string, fn: () => Promise<unknown>, required = false) {
   const t = Date.now();
@@ -32,6 +33,7 @@ try {
   await step('Commons 位置検索', enrichCommonsGeo);
   await step('新着・イベント', collectNews);
   await step('統合・出力', buildData, true);
+  await step('子供向けイベント', () => collectEvents());
 } catch {
   console.error('必須ステップが失敗したため、公開データは更新していません。');
   process.exit(1);
