@@ -409,3 +409,7 @@ select { flex: 1; min-width: 0; }
 .discover-slider span:last-child { color: var(--accent); }
 .discover-slider input { flex: 1; min-width: 0; accent-color: var(--accent); }
 .legend-h { margin: 8px 0 0; font-size: 12px; font-weight: 700; color: var(--ink-soft); }
+@media (max-width: 700px) {
+  .when-label { display: none; }
+  #open-viewed { padding: 4px 9px; font-size: 13px; }
+}
