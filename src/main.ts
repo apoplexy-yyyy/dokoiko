@@ -72,7 +72,7 @@ async function refresh() {
   const [news, events] = await Promise.all([loadNews(), loadEvents()]);
   if (req !== state.req) return; // 古い要求は捨てる
 
-  const { picks, total, keywords } = rankInView(spots, b, {
+  const { picks, others, total, keywords } = rankInView(spots, b, {
     count: COUNT,
     rainy: state.rainy,
     seen: state.seenAtLoad,
@@ -82,6 +82,7 @@ async function refresh() {
   });
   state.picks = picks;
   render(picks, total, wide, news, keywords, events);
+  map.showOthers(others);
   for (const s of picks) history.add('seen', s);
   updateCounts();
 }

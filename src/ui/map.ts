@@ -14,6 +14,8 @@ export class DiscoverMap {
   private eventLayer = L.layerGroup();
   private eventMarkers = new Map<string, L.Marker>();
   private pickMarkers = new Map<string, L.Marker>();
+  private otherLayer = L.layerGroup();
+  private otherMarkers: L.Marker[] = [];
   private timer = 0;
 
   constructor(el: HTMLElement, center: [number, number], zoom: number, onMove: () => void) {
@@ -23,6 +25,7 @@ export class DiscoverMap {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     }).addTo(this.map);
     this.foundLayer.addTo(this.map);
+    this.otherLayer.addTo(this.map);
     this.eventLayer.addTo(this.map);
     this.hereLayer.addTo(this.map);
     this.pickLayer.addTo(this.map);
@@ -54,13 +57,13 @@ export class DiscoverMap {
 
   /**
    * 名前ラベルは、ほかのラベルやピンと重ならないものだけ表示する。
-   * 候補（番号順）を優先し、残った場所にイベントの会場名を出す。
+   * 候補（番号順）→ イベントの会場名 → そのほかの場所 の順に優先する。
    */
   private declutter() {
     const pad = 2;
     const hit = (a: DOMRect, b: DOMRect) =>
       a.left < b.right + pad && b.left < a.right + pad && a.top < b.bottom + pad && b.top < a.bottom + pad;
-    const markers = [...new Set([...this.pickMarkers.values(), ...this.eventMarkers.values()])];
+    const markers = [...new Set([...this.pickMarkers.values(), ...this.eventMarkers.values(), ...this.otherMarkers])];
     const icons = markers.map((m) => ({ m, r: m.getElement()?.querySelector('span')?.getBoundingClientRect() }));
     const picks = new Set(this.pickMarkers.values());
     const placed: DOMRect[] = [];
@@ -194,6 +197,55 @@ export class DiscoverMap {
     el.classList.remove('bounce');
     void el.offsetWidth;
     el.classList.add('bounce');
+  }
+
+  /**
+   * 候補以外の場所も、ほかのピンと重ならないものはすべて小さな丸で出す（順位の高い順に置いていく）
+   * @returns 表示した数
+   */
+  showOthers(spots: Spot[]): number {
+    this.otherLayer.clearLayers();
+    this.otherMarkers = [];
+    const size = this.map.getSize();
+    const MIN = 26; // ピンどうしの最小間隔(px)
+    const taken: L.Point[] = [];
+    for (const m of [...this.pickMarkers.values(), ...this.eventMarkers.values()]) taken.push(this.map.latLngToContainerPoint(m.getLatLng()));
+    for (const s of spots.slice(0, 600)) {
+      const pt = this.map.latLngToContainerPoint([s.lat, s.lon]);
+      if (pt.x < 8 || pt.y < 8 || pt.x > size.x - 8 || pt.y > size.y - 8) continue;
+      if (taken.some((t) => t.distanceTo(pt) < MIN)) continue;
+      taken.push(pt);
+      const c = CAT[s.cat] ?? CAT.other;
+      const m = L.marker([s.lat, s.lon], {
+        icon: L.divIcon({ className: 'spot-dot', html: `<span style="--c:${c.color}">${c.icon}</span>`, iconSize: [22, 22], iconAnchor: [11, 11] }),
+        title: s.name,
+      });
+      m.bindTooltip(s.name.replace(/^(横浜|川崎|相模原|横須賀|藤沢|平塚)市(立)?/, ''), {
+        permanent: true,
+        direction: 'right',
+        offset: [10, 0],
+        className: 'pin-label other-label',
+        interactive: true,
+      });
+      const pop = document.createElement('div');
+      pop.className = 'spot-pop';
+      const b = document.createElement('b');
+      b.textContent = s.name;
+      const meta = document.createElement('span');
+      meta.textContent = [`${c.icon} ${c.label}`, s.city].filter(Boolean).join('・');
+      const a = document.createElement('a');
+      a.href = `https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lon}`;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.textContent = '🧭 行き方';
+      pop.append(b, meta, a);
+      m.bindPopup(pop);
+      m.getTooltip()?.on('click', () => m.openPopup());
+      m.addTo(this.otherLayer);
+      this.otherMarkers.push(m);
+    }
+    this.declutterSoon();
+    return this.otherMarkers.length;
   }
 
   /** ピンを跳ねさせる（地図は動かさない＝候補が入れ替わらない） */
