@@ -10,14 +10,14 @@ import { CAT } from './ui/labels';
 import { eventItem } from './ui/events';
 import { DiscoverMap } from './ui/map';
 
-/** 表示数の選択肢（候補の場所・イベントとも、この数だけ一覧と地図に出す） */
-export const COUNTS = [3, 6, 10, 20];
+const COUNT = 6;
+/** イベントを最初に並べる件数（「もっと見る」で全部） */
+const EVENT_COUNT = 5;
 
 const state = {
   meta: null as Meta | null,
   here: null as [number, number] | null, // 現在地（取得できたときだけ）
   rainy: false,
-  count: COUNTS.includes(history.prefs.get<number>('count', 6)) ? history.prefs.get<number>('count', 6) : 6,
   when: history.prefs.get<When>('when', 'weekend'),
   eventsOpen: false,
   picks: [] as Spot[],
@@ -73,7 +73,7 @@ async function refresh() {
   if (req !== state.req) return; // 古い要求は捨てる
 
   const { picks, total, keywords } = rankInView(spots, b, {
-    count: state.count,
+    count: COUNT,
     rainy: state.rainy,
     seen: state.seenAtLoad,
     skip: state.skip,
@@ -105,9 +105,7 @@ function renderEvents(box: HTMLElement, data: EventsData | null, b: ReturnType<D
   sec.append(
     h('div', { class: 'events-head' }, h('h2', { class: 'results-title' }, `🗓️ ${wide ? '' : 'この範囲の'}${WHEN_LABEL[state.when]}のイベント`, hits.length ? h('span', { class: 'count' }, ` ${hits.length}件`) : null), seg),
   );
-  // 地図に出すのは一覧に並べた分だけ（多すぎるとラベルで埋まる）
-  const shown: EventHit[] = state.eventsOpen ? hits.slice(0, 60) : hits.slice(0, state.count);
-  map.showEvents(shown.map((x) => x.ev), (id) => {
+  map.showEvents(hits.map((x) => x.ev), (id) => {
     document.querySelector(`.ev[data-ev="${CSS.escape(id)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   });
 
@@ -127,6 +125,7 @@ function renderEvents(box: HTMLElement, data: EventsData | null, b: ReturnType<D
     box.append(sec);
     return;
   }
+  const shown: EventHit[] = state.eventsOpen ? hits.slice(0, 60) : hits.slice(0, EVENT_COUNT);
   sec.append(
     h(
       'ul',
@@ -289,15 +288,6 @@ async function init() {
   });
 
   $('#locate').addEventListener('click', locate);
-  const countSel = $<HTMLSelectElement>('#count');
-  for (const n of COUNTS) countSel.append(h('option', { value: String(n) }, `${n}件`));
-  countSel.value = String(state.count);
-  countSel.addEventListener('change', () => {
-    state.count = Number(countSel.value);
-    state.eventsOpen = false;
-    history.prefs.set('count', state.count);
-    refresh();
-  });
   $<HTMLInputElement>('#rainy').addEventListener('change', (e) => {
     state.rainy = (e.target as HTMLInputElement).checked;
     refresh();

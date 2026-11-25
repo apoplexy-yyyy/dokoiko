@@ -40,7 +40,51 @@ export class DiscoverMap {
       size = now;
       this.map.invalidateSize();
       notify();
+      this.declutterSoon();
     }).observe(el);
+    this.map.on('zoomend', () => this.declutterSoon());
+  }
+
+  private declutterFrame = 0;
+  private declutterSoon() {
+    cancelAnimationFrame(this.declutterFrame);
+    this.declutterFrame = requestAnimationFrame(() => this.declutter());
+  }
+
+  /**
+   * 名前ラベルは、ほかのラベルやピンと重ならないものだけ表示する。
+   * 候補（番号順）を優先し、残った場所にイベントの会場名を出す。
+   */
+  private declutter() {
+    const pad = 2;
+    const hit = (a: DOMRect, b: DOMRect) =>
+      a.left < b.right + pad && b.left < a.right + pad && a.top < b.bottom + pad && b.top < a.bottom + pad;
+    const markers = [...new Set([...this.pickMarkers.values(), ...this.eventMarkers.values()])];
+    const icons = markers.map((m) => ({ m, r: m.getElement()?.querySelector('span')?.getBoundingClientRect() }));
+    const picks = new Set(this.pickMarkers.values());
+    const placed: DOMRect[] = [];
+    for (const m of markers) {
+      const el = m.getTooltip()?.getElement();
+      if (!el) continue;
+      el.style.visibility = '';
+      el.style.marginLeft = '';
+      // 候補のラベルは候補のピンだけを避ける（イベントのピンの上には重なってよい）
+      const obstacles = picks.has(m) ? icons.filter((i) => picks.has(i.m)) : icons;
+      const free = (r: DOMRect) =>
+        !placed.some((p) => hit(r, p)) && !obstacles.some((i) => i.m !== m && i.r && i.r.width > 0 && hit(r, i.r));
+      let r = el.getBoundingClientRect();
+      if (!free(r)) {
+        // 右がふさがっていたら、ピンの左側に出してみる
+        const dx = (L.point(m.getTooltip()!.options.offset ?? [0, 0]).x || 0) * 2 + r.width + 10;
+        el.style.marginLeft = `-${dx}px`;
+        r = el.getBoundingClientRect();
+      }
+      if (free(r)) placed.push(r);
+      else {
+        el.style.marginLeft = '';
+        el.style.visibility = 'hidden';
+      }
+    }
   }
 
   get zoom() {
@@ -102,6 +146,7 @@ export class DiscoverMap {
       m.addTo(this.pickLayer);
       this.pickMarkers.set(s.id, m);
     });
+    this.declutterSoon();
   }
 
   /** イベント会場（座標が分かるものだけ）。同じ会場は1つのピンにまとめる */
@@ -139,6 +184,7 @@ export class DiscoverMap {
       m.addTo(this.eventLayer);
       for (const e of evs) this.eventMarkers.set(e.id, m);
     }
+    this.declutterSoon();
   }
 
   highlightEvent(id: string) {

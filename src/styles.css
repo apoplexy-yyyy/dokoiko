@@ -268,5 +268,3 @@ select { flex: 1; min-width: 0; }
 .leaflet-tooltip.pin-label::before { display: none; }
 .leaflet-tooltip.event-label { font-weight: 500; font-size: 11px; border-color: var(--accent); }
 
-.count-sel { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
-.count-sel select { flex: none; }
