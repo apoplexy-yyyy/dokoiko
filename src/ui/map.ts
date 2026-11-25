@@ -51,7 +51,8 @@ export class DiscoverMap {
       this.timer = window.setTimeout(onMove, 200);
     };
     this.map.on('moveend', notify);
-    this.map.on('popupopen', () => {
+    this.map.on('popupopen', (e) => {
+      this.fitPopup(e.popup);
       popupOpen = true;
       el.parentElement?.classList.add('popup-open');
     });
@@ -74,6 +75,68 @@ export class DiscoverMap {
       this.declutterSoon();
     }).observe(el);
     this.map.on('zoomend', () => this.declutterSoon());
+  }
+
+  /**
+   * 地図は動かさずに吹き出しを画面内に収める。
+   * 上にはみ出すならピンの下側に出し、左右にはみ出すなら横にずらす。高すぎるときは中をスクロールさせる。
+   */
+  private fitPopup(p: L.Popup) {
+    const el = p.getElement();
+    if (!el) return;
+    const content = el.querySelector<HTMLElement>('.leaflet-popup-content');
+    const size = this.map.getSize();
+    const M = 8; // 画面の端との余白
+    el.classList.remove('below');
+    p.options.offset = L.point(0, 7);
+    if (content) {
+      content.style.maxHeight = `${Math.max(160, size.y - 2 * M - 20)}px`;
+      content.style.overflowY = 'auto';
+    }
+    p.update();
+    const pt = this.map.latLngToContainerPoint(p.getLatLng()!);
+    // 吹き出し本体（矢印を除く）を置きたい位置を、地図の座標で決める
+    const wrap = el.querySelector<HTMLElement>('.leaflet-popup-content-wrapper') ?? el;
+    const w = wrap.offsetWidth;
+    let hb = wrap.offsetHeight;
+    // 上下どちらにも入らず、横にも置けない（スマホなど）ときは、広い方に入るよう吹き出しを低くして中をスクロールさせる
+    const spaceAbove = pt.y - 30 - M;
+    const spaceBelow = size.y - M - (pt.y + 24);
+    const sideFits = pt.x + 26 + w <= size.x - M || pt.x - 26 - w >= M;
+    if (hb > spaceAbove && hb > spaceBelow && !sideFits && content && Math.max(spaceAbove, spaceBelow) >= 200) {
+      const space = Math.max(spaceAbove, spaceBelow);
+      content.style.maxHeight = `${content.offsetHeight - (hb - space)}px`;
+      p.update();
+      hb = wrap.offsetHeight;
+    }
+    const clampLeft = (left: number) => Math.min(Math.max(left, M), Math.max(M, size.x - M - w));
+    let left: number;
+    let top: number;
+    if (pt.y - hb - 30 >= M) {
+      // 上に入る（ふつう。矢印を残す）
+      left = clampLeft(pt.x - w / 2);
+      top = pt.y - hb - 30;
+    } else {
+      el.classList.add('below');
+      if (pt.y + 24 + hb <= size.y - M) {
+        // 下に入る
+        left = clampLeft(pt.x - w / 2);
+        top = pt.y + 24;
+      } else {
+        // 上下どちらにも入らない：ピンの横（右、入らなければ左）に、縦は画面内に収めて出す
+        top = Math.min(Math.max(pt.y - hb / 2, M), Math.max(M, size.y - M - hb));
+        const right = pt.x + 26;
+        const leftSide = pt.x - 26 - w;
+        left = right + w <= size.x - M ? right : leftSide >= M ? leftSide : M;
+      }
+    }
+    // 実際の位置を測って、ずれた分だけ offset を直す（Leaflet の余白や矢印の高さを気にしなくて済む）
+    const origin = this.map.getContainer().getBoundingClientRect();
+    const r = wrap.getBoundingClientRect();
+    const dx = left - (r.left - origin.left);
+    const dy = top - (r.top - origin.top);
+    p.options.offset = L.point(dx, 7 + dy);
+    p.update();
   }
 
   private declutterFrame = 0;
@@ -203,7 +266,7 @@ export class DiscoverMap {
         className: `pin-label${x.pick ? '' : ' other-label'}`,
         interactive: true,
       });
-      m.bindPopup(() => popup(s), { maxWidth: 340, minWidth: 260, autoPanPadding: [16, 16], className: 'card-popup' });
+      m.bindPopup(() => popup(s), { maxWidth: 340, minWidth: 260, autoPan: false, className: 'card-popup' });
       m.getTooltip()?.on('click', () => m.openPopup());
       m.addTo(x.pick ? this.pickLayer : this.otherLayer);
       if (x.pick) this.pickMarkers.set(s.id, m);
@@ -247,7 +310,7 @@ export class DiscoverMap {
         className: 'pin-label event-label',
         interactive: true,
       });
-      m.bindPopup(() => popup(list), { maxWidth: 360, minWidth: 260, autoPanPadding: [16, 16], className: 'event-popup' });
+      m.bindPopup(() => popup(list), { maxWidth: 360, minWidth: 260, autoPan: false, className: 'event-popup' });
       m.getTooltip()?.on('click', () => m.openPopup());
       m.addTo(this.eventLayer);
       for (const x of list) this.eventMarkers.set(x.ev.id, m);

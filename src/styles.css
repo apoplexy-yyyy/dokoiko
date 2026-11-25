@@ -366,3 +366,4 @@ select { flex: 1; min-width: 0; }
 .brand-sub .seg { display: inline-flex; vertical-align: middle; margin: 0 4px; padding: 2px; }
 .brand-sub .seg button { padding: 1px 10px; font-size: 13px; line-height: 1.5; }
 .topbar { padding-bottom: 10px; }
+.leaflet-popup.below .leaflet-popup-tip-container { display: none; }
