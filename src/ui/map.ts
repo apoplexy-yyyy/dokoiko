@@ -47,8 +47,9 @@ export class DiscoverMap {
 
   private declutterFrame = 0;
   private declutterSoon() {
-    cancelAnimationFrame(this.declutterFrame);
-    this.declutterFrame = requestAnimationFrame(() => this.declutter());
+    // requestAnimationFrame は非表示のタブでは止まるので setTimeout を使う
+    clearTimeout(this.declutterFrame);
+    this.declutterFrame = window.setTimeout(() => this.declutter(), 30);
   }
 
   /**
