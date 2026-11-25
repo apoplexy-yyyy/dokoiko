@@ -27,7 +27,9 @@ describe('Commons 位置検索', () => {
 
 describe('名前条件つきカテゴリ', () => {
   it('児童館という名前の community_centre だけ拾う', () => {
-    expect(classify({ amenity: 'community_centre', name: '〇〇児童館' })?.cat).toBe('play');
+    expect(classify({ amenity: 'community_centre', name: '〇〇児童館' })?.cat).toBe('kids');
+    expect(classify({ building: 'public', name: '宮前平こども文化センター' })?.cat).toBe('kids');
+    expect(classify({ building: 'yes', name: '〇〇ビル' })).toBeUndefined();
     expect(classify({ amenity: 'community_centre', name: '〇〇地区センター' })).toBeUndefined();
     expect(classify({ highway: 'rest_area', name: '道の駅 山北' })?.cat).toBe('farm');
   });

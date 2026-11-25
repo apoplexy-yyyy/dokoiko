@@ -14,8 +14,8 @@
     { "key": "leisure", "value": "bird_hide", "cat": "nature", "base": 0.6 },
     { "key": "leisure", "value": "trampoline_park", "cat": "play", "base": 0.85, "indoor": true },
     { "key": "leisure", "value": "beach_resort", "cat": "water", "base": 0.8 },
-    { "key": "tourism", "value": "zoo", "cat": "zoo", "base": 1.0 },
-    { "key": "tourism", "value": "aquarium", "cat": "zoo", "base": 1.0, "indoor": true },
+    { "key": "tourism", "value": "zoo", "cat": "zoo", "base": 1 },
+    { "key": "tourism", "value": "aquarium", "cat": "zoo", "base": 1, "indoor": true },
     { "key": "tourism", "value": "theme_park", "cat": "play", "base": 0.9 },
     { "key": "tourism", "value": "museum", "cat": "museum", "base": 0.7, "indoor": true },
     { "key": "tourism", "value": "gallery", "cat": "museum", "base": 0.4, "indoor": true },
@@ -25,8 +25,17 @@
     { "key": "tourism", "value": "attraction", "cat": "other", "base": 0.35 },
     { "key": "amenity", "value": "library", "cat": "library", "base": 0.6, "indoor": true },
     { "key": "amenity", "value": "planetarium", "cat": "museum", "base": 0.9, "indoor": true },
-    { "key": "amenity", "value": "community_centre", "cat": "play", "base": 0.8, "indoor": true, "nameMatch": "児童館|こどもセンター|子どもセンター|子供センター|こどもの家|子どもの家|プレイパーク|キッズ|青少年" },
-    { "key": "amenity", "value": "social_facility", "cat": "play", "base": 0.8, "indoor": true, "nameMatch": "児童館|こどもセンター|子どもセンター|子育て支援" },
+    { "key": "amenity", "value": "community_centre", "cat": "kids", "base": 0.85, "indoor": true, "nameMatch": "児童館|児童センター|こども文化センター|子ども文化センター|こどもセンター|子どもセンター|子育て支援センター|子育て支援拠点|地域子育て|子育てひろば|子育て広場|親子ひろば|親子の広場|こどもログハウス|プレイパーク|冒険遊び場|こども館|子ども館|こどもの家|子どもの家|こどもの城|まちなかキッズパーク" },
+    { "key": "amenity", "value": "social_facility", "cat": "kids", "base": 0.85, "indoor": true, "nameMatch": "児童館|児童センター|こども文化センター|子ども文化センター|こどもセンター|子どもセンター|子育て支援センター|子育て支援拠点|地域子育て|子育てひろば|子育て広場|親子ひろば|親子の広場|こどもログハウス|プレイパーク|冒険遊び場|こども館|子ども館|こどもの家|子どもの家|こどもの城|まちなかキッズパーク" },
+    { "key": "amenity", "value": "public_building", "cat": "kids", "base": 0.85, "indoor": true, "nameMatch": "児童館|児童センター|こども文化センター|子ども文化センター|こどもセンター|子どもセンター|子育て支援センター|子育て支援拠点|地域子育て|子育てひろば|子育て広場|親子ひろば|親子の広場|こどもログハウス|プレイパーク|冒険遊び場|こども館|子ども館|こどもの家|子どもの家|こどもの城|まちなかキッズパーク" },
+    { "key": "amenity", "value": "townhall", "cat": "kids", "base": 0.85, "indoor": true, "nameMatch": "児童館|児童センター|こども文化センター|子ども文化センター|こどもセンター|子どもセンター|子育て支援センター|子育て支援拠点|地域子育て|子育てひろば|子育て広場|親子ひろば|親子の広場|こどもログハウス|プレイパーク|冒険遊び場|こども館|子ども館|こどもの家|子どもの家|こどもの城|まちなかキッズパーク" },
+    { "key": "amenity", "value": "kindergarten", "cat": "kids", "base": 0.85, "indoor": true, "nameMatch": "児童館|児童センター|こども文化センター|子ども文化センター|こどもセンター|子どもセンター|子育て支援センター|子育て支援拠点|地域子育て|子育てひろば|子育て広場|親子ひろば|親子の広場|こどもログハウス|プレイパーク|冒険遊び場|こども館|子ども館|こどもの家|子どもの家|こどもの城|まちなかキッズパーク" },
+    { "key": "amenity", "value": "school", "cat": "kids", "base": 0.85, "indoor": true, "nameMatch": "児童館|児童センター|こども文化センター|子ども文化センター|こどもセンター|子どもセンター|子育て支援センター|子育て支援拠点|地域子育て|子育てひろば|子育て広場|親子ひろば|親子の広場|こどもログハウス|プレイパーク|冒険遊び場|こども館|子ども館|こどもの家|子どもの家|こどもの城|まちなかキッズパーク" },
+    { "key": "building", "value": "public", "cat": "kids", "base": 0.85, "indoor": true, "nameMatch": "児童館|児童センター|こども文化センター|子ども文化センター|こどもセンター|子どもセンター|子育て支援センター|子育て支援拠点|地域子育て|子育てひろば|子育て広場|親子ひろば|親子の広場|こどもログハウス|プレイパーク|冒険遊び場|こども館|子ども館|こどもの家|子どもの家|こどもの城|まちなかキッズパーク" },
+    { "key": "building", "value": "civic", "cat": "kids", "base": 0.85, "indoor": true, "nameMatch": "児童館|児童センター|こども文化センター|子ども文化センター|こどもセンター|子どもセンター|子育て支援センター|子育て支援拠点|地域子育て|子育てひろば|子育て広場|親子ひろば|親子の広場|こどもログハウス|プレイパーク|冒険遊び場|こども館|子ども館|こどもの家|子どもの家|こどもの城|まちなかキッズパーク" },
+    { "key": "building", "value": "yes", "cat": "kids", "base": 0.85, "indoor": true, "nameMatch": "児童館|児童センター|こども文化センター|子ども文化センター|こどもセンター|子どもセンター|子育て支援センター|子育て支援拠点|地域子育て|子育てひろば|子育て広場|親子ひろば|親子の広場|こどもログハウス|プレイパーク|冒険遊び場|こども館|子ども館|こどもの家|子どもの家|こどもの城|まちなかキッズパーク" },
+    { "key": "leisure", "value": "indoor_play", "cat": "kids", "base": 0.85, "indoor": true },
+    { "key": "amenity", "value": "community_centre", "cat": "play", "base": 0.6, "indoor": true, "nameMatch": "キッズ|青少年|少年自然の家" },
     { "key": "highway", "value": "rest_area", "cat": "farm", "base": 0.6, "nameMatch": "道の駅" },
     { "key": "highway", "value": "services", "cat": "farm", "base": 0.6, "nameMatch": "道の駅" },
     { "key": "natural", "value": "beach", "cat": "water", "base": 0.8 },
@@ -50,7 +59,13 @@
   "excludeNameByCategory": {
     "library": "大学|附属|学園|高校|高等学校|中学校|小学校|研究所|専門",
     "museum": "大学|研究所|専門店|店$|販売|ショップ",
-    "water": "学校|高校|大学|中学|会員|ジム|競泳|飛込|用プール"
+    "water": "学校|高校|大学|中学|会員|ジム|競泳|飛込|用プール|スクール|教室|クラブ",
+    "kids": "前$|入口|図書室|保育|クリニック|駐車|駐輪|児童遊園|学童|放課後|病児"
   },
-  "excludeAccess": ["private", "no", "customers", "members"]
+  "excludeAccess": [
+    "private",
+    "no",
+    "customers",
+    "members"
+  ]
 }

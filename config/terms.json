@@ -28,6 +28,7 @@
     "amenity=planetarium": "星",
     "amenity=community_centre": "児童館",
     "amenity=social_facility": "児童館",
+    "leisure=indoor_play": "室内あそび場",
     "highway=rest_area": "道の駅",
     "highway=services": "道の駅",
     "natural=beach": "海辺",

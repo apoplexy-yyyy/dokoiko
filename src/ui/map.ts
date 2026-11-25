@@ -27,10 +27,20 @@ export class DiscoverMap {
     this.hereLayer.addTo(this.map);
     this.pickLayer.addTo(this.map);
     // 連続した移動はまとめて1回だけ通知
-    this.map.on('moveend', () => {
+    const notify = () => {
       clearTimeout(this.timer);
       this.timer = window.setTimeout(onMove, 200);
-    });
+    };
+    this.map.on('moveend', notify);
+    // 読み込み時に地図の大きさが 0（非表示のタブなど）だと範囲が求まらないので、大きさが変わったら選び直す
+    let size = `${el.clientWidth}x${el.clientHeight}`;
+    new ResizeObserver(() => {
+      const now = `${el.clientWidth}x${el.clientHeight}`;
+      if (now === size) return;
+      size = now;
+      this.map.invalidateSize();
+      notify();
+    }).observe(el);
   }
 
   get zoom() {

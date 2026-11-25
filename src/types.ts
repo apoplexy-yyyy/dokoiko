@@ -12,6 +12,7 @@ export type Category =
   | 'view'
   | 'farm'
   | 'play'
+  | 'kids'
   | 'other';
 
 /** 子供向けポイント（カードにアイコン表示） */

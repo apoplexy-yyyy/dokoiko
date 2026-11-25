@@ -12,6 +12,7 @@ export const CAT: Record<Category, { label: string; icon: string; color: string 
   view: { label: '見晴らし', icon: '⛰️', color: '#5f7f8f' },
   farm: { label: '農園・直売', icon: '🍓', color: '#c94b62' },
   play: { label: 'あそび', icon: '🎡', color: '#d4583d' },
+  kids: { label: '児童館・子育てひろば', icon: '🧸', color: '#d9639a' },
   other: { label: 'スポット', icon: '✦', color: '#8a7a5c' },
 };
 

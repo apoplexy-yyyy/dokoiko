@@ -50,9 +50,20 @@ export interface OsmWork {
 
 /** categories.json のルールから Overpass のフィルタ文を生成 */
 export function buildFilters(area: string): string {
-  const byKey = new Map<string, string[]>();
-  for (const r of categories.rules) byKey.set(r.key, [...(byKey.get(r.key) ?? []), r.value]);
-  return [...byKey].map(([k, vs]) => `nwr(area.${area})["${k}"~"^(${vs.join('|')})$"]["name"];`).join('\n  ');
+  // 名前の条件があるルール（building=yes など数が多いタグ）は、名前でしぼって取得する
+  const byKey = new Map<string, Set<string>>();
+  const byName = new Map<string, Set<string>>();
+  for (const r of categories.rules as { key: string; value: string; nameMatch?: string }[]) {
+    const [map, k] = r.nameMatch ? [byName, `${r.key}\t${r.nameMatch}`] : [byKey, r.key];
+    map.set(k, (map.get(k) ?? new Set()).add(r.value));
+  }
+  return [
+    ...[...byKey].map(([k, vs]) => `nwr(area.${area})["${k}"~"^(${[...vs].join('|')})$"]["name"];`),
+    ...[...byName].map(([kn, vs]) => {
+      const [k, nm] = kn.split('\t');
+      return `nwr(area.${area})["${k}"~"^(${[...vs].join('|')})$"]["name"~"${nm}"];`;
+    }),
+  ].join('\n  ');
 }
 
 async function overpass(query: string, minElements = 1): Promise<OsmElement[]> {
