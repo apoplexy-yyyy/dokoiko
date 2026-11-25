@@ -1,14 +1,12 @@
-// 発見カード：行ってみたくなる情報（写真・特徴・説明・新着）と行動ボタン
+// 発見カード：行ってみたくなる情報（写真・特徴・説明・新着）とリンク
 import type { EventItem, NewsItem, Spot } from '../types';
 import { spotEvents } from './events';
 import { h, safeUrl } from './dom';
-import { CAT, FEAT, googleSearchUrl, travelText } from './labels';
+import { CAT, FEAT, googleSearchUrl } from './labels';
 
 export interface CardContext {
   /** 番号（0始まり）。負なら番号を出さない */
   index: number;
-  distKm?: number;
-  distFrom: string;
   /** このスポットの特徴語（珍しいものだけ） */
   tags: string[];
   isNew: boolean;
@@ -16,7 +14,6 @@ export interface CardContext {
   cityNews: NewsItem[];
   /** この施設で開催予定のイベント */
   events: EventItem[];
-  onReplace: () => void;
   onFocus: () => void;
 }
 
@@ -88,10 +85,7 @@ export function renderCard(s: Spot, ctx: CardContext): HTMLElement {
             )
           : null,
       )
-    : h('p', { class: 'desc muted' }, `${c.label}。まだあまり知られていない場所かもしれません。行ってみて確かめよう！`);
-
-  const replaceBtn = h('button', { type: 'button', class: 'act subtle' }, '🔄 ほかの場所');
-  replaceBtn.addEventListener('click', ctx.onReplace);
+    : null; // 説明が無ければ何も出さない
 
   const card = h(
     'article',
@@ -100,7 +94,7 @@ export function renderCard(s: Spot, ctx: CardContext): HTMLElement {
     h(
       'div',
       { class: 'card-body' },
-      h('p', { class: 'card-kicker' }, h('span', { class: 'cat' }, `${c.icon} ${c.label}`), ctx.distKm != null ? h('span', {}, `${ctx.distFrom}${travelText(ctx.distKm)}`) : null),
+      h('p', { class: 'card-kicker' }, h('span', { class: 'cat' }, `${c.icon} ${c.label}`)),
       h('h3', {}, s.name),
       ctx.tags.length ? h('p', { class: 'tags' }, ...ctx.tags.map((t) => h('span', { class: 'tag' }, `#${t}`))) : null,
       s.city ? h('p', { class: 'city' }, s.city) : null,
@@ -121,14 +115,8 @@ export function renderCard(s: Spot, ctx: CardContext): HTMLElement {
           { href: `https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lon}`, target: '_blank', rel: 'noopener' },
           '🧭 行き方',
         ),
-        h(
-          'a',
-          { href: `https://www.openstreetmap.org/${{ n: 'node', w: 'way', r: 'relation' }[s.id[0]]}/${s.id.slice(1)}`, target: '_blank', rel: 'noopener' },
-          '🗺️ OSM',
-        ),
         safeUrl(s.web) ? h('a', { href: safeUrl(s.web), target: '_blank', rel: 'noopener' }, '🔗 公式サイト') : null,
       ),
-      h('div', { class: 'actions' }, replaceBtn),
     ),
   );
   media.addEventListener('click', ctx.onFocus);

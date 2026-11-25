@@ -1,7 +1,7 @@
 import './styles.css';
 import { DETAIL_ZOOM, loadBounds, loadEvents, loadHighlights, loadMeta, loadNews } from './data/loader';
 import { eventsInView, WHEN_LABEL, whenDays, type EventHit, type When } from './discover/events';
-import { distKm, rankInView, todaySeed } from './discover/pick';
+import { rankInView, todaySeed } from './discover/pick';
 import type { EventsData, Meta, NewsData, NewsItem, Spot } from './types';
 import { renderCard } from './ui/card';
 import { $, h, safeUrl } from './ui/dom';
@@ -57,20 +57,12 @@ function newsFor(spot: Spot, news: NewsData | null): { spotNews: NewsItem[]; cit
 
 /** 場所のピンを押したときの吹き出し（カード） */
 function spotPopup(s: Spot): HTMLElement {
-  const ref = map.center;
   return renderCard(s, {
     index: -1,
     isNew: !state.seenAtLoad.has(s.id),
-    distKm: distKm(ref[0], ref[1], s.lat, s.lon),
-    distFrom: '地図の中心から ',
     tags: (s.t ?? []).map((i) => state.meta!.terms[i]).filter((t) => t && t.idf >= 1.5).map((t) => t.label),
     ...newsFor(s, state.news),
     events: (state.events?.events ?? []).filter((e) => e.spot === s.id),
-    onReplace: () => {
-      state.skip.add(s.id);
-      map.closePopup();
-      refresh();
-    },
     onFocus: () => {},
   });
 }
