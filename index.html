@@ -21,6 +21,7 @@
           <div class="brand-actions">
             <span class="when-label">🗓️<span> イベント</span></span>
             <div class="seg" id="when" role="group" aria-label="イベントの時期"></div>
+            <button class="ghost-btn icon-btn" id="open-viewed" type="button" aria-label="閲覧履歴" title="閲覧履歴">🕘</button>
             <button class="ghost-btn icon-btn" id="open-about" type="button" aria-label="このサイトについて・出典">ⓘ</button>
           </div>
         </div>
@@ -43,6 +44,17 @@
         </details>
       </main>
     </div>
+
+    <dialog id="viewed" class="log">
+      <form method="dialog" class="log-head">
+        <h2>閲覧履歴</h2>
+        <span class="log-head-actions">
+          <button class="ghost-btn" type="button" id="viewed-clear">すべて消す</button>
+          <button class="ghost-btn" value="close" aria-label="閉じる">✕</button>
+        </span>
+      </form>
+      <ul id="viewed-list" class="log-list"></ul>
+    </dialog>
 
     <dialog id="about" class="log">
       <form method="dialog" class="log-head">

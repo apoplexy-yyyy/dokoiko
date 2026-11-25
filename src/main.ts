@@ -7,7 +7,7 @@ import { renderCard } from './ui/card';
 import { $, h, safeUrl } from './ui/dom';
 import { eventItem } from './ui/events';
 import { history } from './ui/history';
-import { CAT } from './ui/labels';
+import { CAT, googleSearchUrl } from './ui/labels';
 import { BASEMAPS, DiscoverMap, type RankedSpot } from './ui/map';
 
 /** おすすめ（大きく、必ず表示する）の数 */
@@ -57,9 +57,9 @@ function newsFor(spot: Spot, news: NewsData | null): { spotNews: NewsItem[]; cit
 
 /** 場所のピンを押したときの吹き出し（カード） */
 function spotPopup(s: Spot): HTMLElement {
+  history.add('viewed', s); // 閲覧履歴（吹き出しを開いた場所）
   return renderCard(s, {
     index: -1,
-    isNew: !state.seenAtLoad.has(s.id),
     tags: (s.t ?? []).map((i) => state.meta!.terms[i]).filter((t) => t && t.idf >= 1.5).map((t) => t.label),
     ...newsFor(s, state.news),
     events: (state.events?.events ?? []).filter((e) => e.spot === s.id),
@@ -119,6 +119,56 @@ function setWhen(w: When) {
   history.prefs.set('when', w);
   $('#when').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.when === w)));
   refresh();
+}
+
+/** 閲覧履歴：吹き出しを開いた場所（新しい順） */
+function setupViewed() {
+  const dlg = $<HTMLDialogElement>('#viewed');
+  const fmt = (t: number) => {
+    const d = new Date(t);
+    return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
+  const render = () => {
+    const list = history.list('viewed').slice().reverse();
+    $('#viewed-clear').toggleAttribute('hidden', !list.length);
+    $('#viewed-list').replaceChildren(
+      ...(list.length
+        ? list.map((v) => {
+            const c = CAT[v.cat] ?? CAT.other;
+            const go = h('button', { type: 'button', class: 'log-name link-like', title: '地図で見る' }, v.name);
+            go.addEventListener('click', () => {
+              dlg.close();
+              map.flyTo(v.lat, v.lon, Math.max(map.zoom, 15));
+            });
+            const rm = h('button', { type: 'button', class: 'ghost-btn', 'aria-label': `${v.name}を履歴から消す` }, '✕');
+            rm.addEventListener('click', () => {
+              history.remove('viewed', v.id);
+              render();
+            });
+            return h(
+              'li',
+              {},
+              h('span', { class: 'log-icon', style: `--c:${c.color}` }, c.icon),
+              h('div', { class: 'log-main' }, go, h('span', { class: 'log-meta' }, [v.city, fmt(v.at)].filter(Boolean).join('・'))),
+              h('a', { href: googleSearchUrl(v.name, v.city), target: '_blank', rel: 'noopener' }, 'Google'),
+              h('a', { href: `https://www.google.com/maps/dir/?api=1&destination=${v.lat},${v.lon}`, target: '_blank', rel: 'noopener' }, '行き方'),
+              rm,
+            );
+          })
+        : [h('li', { class: 'empty' }, 'アイコンを押して詳しい情報を見た場所が、ここに新しい順で並びます。')]),
+    );
+  };
+  $('#open-viewed').addEventListener('click', () => {
+    render();
+    dlg.showModal();
+  });
+  $('#viewed-clear').addEventListener('click', () => {
+    history.clear('viewed');
+    render();
+  });
+  dlg.addEventListener('click', (e) => {
+    if (e.target === dlg) dlg.close();
+  });
 }
 
 function setupAbout() {
@@ -192,6 +242,7 @@ async function init() {
   });
 
   setupAbout();
+  setupViewed();
   const baseSel = $<HTMLSelectElement>('#base');
   for (const [k, b] of Object.entries(BASEMAPS)) baseSel.append(h('option', { value: k }, b.label));
   baseSel.value = map.base;

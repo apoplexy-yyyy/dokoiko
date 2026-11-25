@@ -9,7 +9,6 @@ export interface CardContext {
   index: number;
   /** このスポットの特徴語（珍しいものだけ） */
   tags: string[];
-  isNew: boolean;
   spotNews: NewsItem[];
   cityNews: NewsItem[];
   /** この施設で開催予定のイベント */
@@ -55,7 +54,6 @@ export function renderCard(s: Spot, ctx: CardContext): HTMLElement {
       ? h('img', { src: img, alt: s.name, loading: 'lazy', referrerpolicy: 'no-referrer' })
       : h('span', { class: 'card-emoji', 'aria-hidden': 'true' }, c.icon),
     ctx.index >= 0 ? h('span', { class: 'card-num' }, String(ctx.index + 1)) : null,
-    ctx.isNew ? h('span', { class: 'card-new' }, 'はじめて') : null,
   );
   if (img && s.img)
     media.append(

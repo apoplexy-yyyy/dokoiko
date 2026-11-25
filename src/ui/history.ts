@@ -1,4 +1,4 @@
-// 利用者ごとの記録（ブラウザ内のみ）：発見済み・行ってみたい・行った
+// 利用者ごとの記録（ブラウザ内のみ）：おすすめに出た場所（seen）・閲覧履歴（viewed）など
 import type { Spot } from '../types';
 
 export interface SavedSpot {
@@ -7,10 +7,11 @@ export interface SavedSpot {
   lat: number;
   lon: number;
   cat: Spot['cat'];
+  city?: string;
   at: number;
 }
 
-type ListName = 'seen' | 'want' | 'went';
+type ListName = 'seen' | 'viewed' | 'want' | 'went';
 const KEY = 'dokoiko:v1:';
 
 function read(name: ListName): SavedSpot[] {
@@ -30,7 +31,7 @@ function write(name: ListName, list: SavedSpot[]) {
   }
 }
 
-const toSaved = (s: Spot): SavedSpot => ({ id: s.id, name: s.name, lat: s.lat, lon: s.lon, cat: s.cat, at: Date.now() });
+const toSaved = (s: Spot): SavedSpot => ({ id: s.id, name: s.name, lat: s.lat, lon: s.lon, cat: s.cat, city: s.city, at: Date.now() });
 
 export const history = {
   list: read,
@@ -50,6 +51,9 @@ export const history = {
       name,
       read(name).filter((s) => s.id !== id),
     );
+  },
+  clear(name: ListName) {
+    write(name, []);
   },
   toggle(name: ListName, spot: Spot): boolean {
     if (this.has(name, spot.id)) {
