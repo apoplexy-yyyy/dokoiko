@@ -4,7 +4,7 @@ import 'leaflet/dist/leaflet.css';
 import type { Bounds } from '../discover/pick';
 import type { EventItem, Spot } from '../types';
 import type { SavedSpot } from './history';
-import { CAT } from './labels';
+import { CAT, googleSearchUrl, shortName } from './labels';
 
 export class DiscoverMap {
   private map: L.Map;
@@ -144,7 +144,7 @@ export class DiscoverMap {
         riseOnHover: true,
       });
       // 「川崎市〇〇こども文化センター」などは市名を省いて短く
-      m.bindTooltip(s.name.replace(/^(横浜|川崎|相模原|横須賀|藤沢|平塚)市(立)?/, ''), { permanent: true, direction: 'right', offset: [14, -24], className: 'pin-label', interactive: true });
+      m.bindTooltip(shortName(s.name), { permanent: true, direction: 'right', offset: [14, -24], className: 'pin-label', interactive: true });
       m.on('click', () => onSelect(s.id));
       m.getTooltip()?.on('click', () => onSelect(s.id));
       m.addTo(this.pickLayer);
@@ -220,7 +220,7 @@ export class DiscoverMap {
         icon: L.divIcon({ className: 'spot-dot', html: `<span style="--c:${c.color}">${c.icon}</span>`, iconSize: [22, 22], iconAnchor: [11, 11] }),
         title: s.name,
       });
-      m.bindTooltip(s.name.replace(/^(横浜|川崎|相模原|横須賀|藤沢|平塚)市(立)?/, ''), {
+      m.bindTooltip(shortName(s.name), {
         permanent: true,
         direction: 'right',
         offset: [10, 0],
@@ -238,7 +238,15 @@ export class DiscoverMap {
       a.target = '_blank';
       a.rel = 'noopener';
       a.textContent = '🧭 行き方';
-      pop.append(b, meta, a);
+      const g = document.createElement('a');
+      g.href = googleSearchUrl(s.name, s.city);
+      g.target = '_blank';
+      g.rel = 'noopener';
+      g.textContent = '🔍 Google';
+      const links = document.createElement('span');
+      links.className = 'spot-pop-links';
+      links.append(g, a);
+      pop.append(b, meta, links);
       m.bindPopup(pop);
       m.getTooltip()?.on('click', () => m.openPopup());
       m.addTo(this.otherLayer);

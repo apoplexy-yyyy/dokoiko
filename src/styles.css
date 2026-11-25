@@ -277,3 +277,4 @@ select { flex: 1; min-width: 0; }
 .leaflet-tooltip.other-label { font-weight: 500; font-size: 11px; opacity: 0.9; }
 .spot-pop { display: grid; gap: 2px; font-family: inherit; }
 .spot-pop span { color: #5b6f70; font-size: 12px; }
+.spot-pop-links { display: flex; gap: 10px; color: inherit; }

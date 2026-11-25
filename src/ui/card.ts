@@ -3,7 +3,7 @@ import type { EventItem, NewsItem, Spot } from '../types';
 import { spotEvents } from './events';
 import { h, safeUrl } from './dom';
 import { history } from './history';
-import { CAT, FEAT, travelText } from './labels';
+import { CAT, FEAT, googleSearchUrl, travelText } from './labels';
 
 export interface CardContext {
   index: number;
@@ -126,6 +126,7 @@ export function renderCard(s: Spot, ctx: CardContext): HTMLElement {
       h(
         'p',
         { class: 'links' },
+        h('a', { href: googleSearchUrl(s.name, s.city), target: '_blank', rel: 'noopener' }, '🔍 Google'),
         h(
           'a',
           { href: `https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lon}`, target: '_blank', rel: 'noopener' },

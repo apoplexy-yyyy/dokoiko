@@ -33,3 +33,19 @@ export function travelText(km: number): string {
   const dist = km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(1)}km`;
   return `${dist}・${m.verb}${min}分ほど`;
 }
+
+/**
+ * 地図のラベル用に、頭の市名を省いて短くする（「川崎市大戸こども文化センター」→「大戸こども文化センター」）。
+ * 「横浜市民プール」「横浜市電保存館」のように市名が名前の一部になっているものはそのまま。
+ */
+export function shortName(name: string): string {
+  const m = name.match(/^(横浜|川崎|相模原|横須賀|藤沢|平塚)市(立)?/);
+  if (!m) return name;
+  const rest = name.slice(m[0].length);
+  if (!m[2] && /^[民電営役内外場政]/.test(rest)) return name;
+  return rest.length >= 2 ? rest : name;
+}
+
+/** 施設名（＋市区町村）でのGoogle検索 */
+export const googleSearchUrl = (name: string, city?: string) =>
+  `https://www.google.com/search?q=${encodeURIComponent([name, city].filter(Boolean).join(' '))}`;
