@@ -18,6 +18,11 @@ export interface RankOptions {
   seed: string;
   /** 特徴語の一覧（Meta.terms）。あれば TF-IDF で重み付けする */
   terms?: Term[];
+  /**
+   * TF-IDF（この範囲での珍しさ）の効き具合。0 なら使わない（いつもの）、1 がふつう、大きいほど強く効かせる（発見！）。
+   * 重みに (0.05 + 0.95 × 特徴度) ^ tfidfPower を掛ける。
+   */
+  tfidfPower?: number;
 }
 
 /** ジャンルのグループと、そのグループが選ばれる目安の割合 */
@@ -120,7 +125,7 @@ export function rankInView(
   let pool: { s: Spot; w: number; key: number; g: string }[] = [];
   for (const s of inView) {
     let w = weight(s, opts);
-    if (useTfIdf) w *= 0.15 + 0.85 * (score.get(s.id) ?? 0);
+    if (useTfIdf) w *= Math.pow(0.05 + 0.95 * (score.get(s.id) ?? 0), opts.tfidfPower ?? 1);
     if (w <= 0) continue;
     pool.push({ s, w, key: Math.log(hash01(opts.seed + ':' + s.id)) / w, g: groupOf.get(s.cat) ?? 'fun' });
   }

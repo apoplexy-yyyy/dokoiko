@@ -31,7 +31,13 @@
       <main class="map-wrap" aria-label="地図">
         <div id="map"></div>
         <details class="legend" id="legend" open>
-          <summary>表示する種類</summary>
+          <summary>表示の設定</summary>
+          <div class="discover-slider">
+            <span>いつもの</span>
+            <input type="range" id="discover" min="0" max="100" step="5" value="50" aria-label="いつもの場所から、この辺りならではの発見まで" />
+            <span>発見！</span>
+          </div>
+          <p class="legend-h">表示する種類</p>
           <div class="legend-all">
             <button type="button" id="all-on">すべてオン</button>
             <button type="button" id="all-off">すべてオフ</button>

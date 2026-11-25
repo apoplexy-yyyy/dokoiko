@@ -45,3 +45,19 @@ describe('areaTfIdf', () => {
     expect(withT).toBeGreaterThan(without * 3);
   });
 });
+
+describe('TF-IDF の効き具合（いつもの ⇔ 発見！）', () => {
+  it('強くするほど珍しい語を持つ場所の重みが相対的に上がる', () => {
+    const spots = [...Array.from({ length: 20 }, (_, i) => mk('p' + i, [0])), mk('fall', [1])];
+    const view = { south: 35, north: 36, west: 139, east: 140 };
+    const opts = { count: 6, rainy: false, seen: new Set<string>(), seed: 's', terms };
+    const ratio = (p: number) => {
+      const { weights } = rankInView(spots, view, { ...opts, tfidfPower: p });
+      const fall = weights.get('fall')!;
+      const park = Math.max(...[...weights].filter(([id]) => id !== 'fall').map(([, w]) => w));
+      return fall / park;
+    };
+    expect(ratio(0)).toBeLessThan(ratio(1));
+    expect(ratio(1)).toBeLessThan(ratio(2));
+  });
+});
