@@ -22,11 +22,11 @@ export interface RankOptions {
 
 /** ジャンルのグループと、そのグループが選ばれる目安の割合 */
 export const GROUPS: Record<string, { cats: Category[]; share: number }> = {
-  park: { cats: ['park', 'playground'], share: 0.2 },
+  park: { cats: ['park', 'playground'], share: 0.15 },
   nature: { cats: ['nature', 'water', 'view'], share: 0.2 },
   learn: { cats: ['museum', 'library', 'history'], share: 0.2 },
   kids: { cats: ['kids'], share: 0.2 },
-  fun: { cats: ['zoo', 'play', 'farm', 'other'], share: 0.2 },
+  fun: { cats: ['zoo', 'play', 'farm', 'other'], share: 0.25 },
 };
 /** グループの重み合計がこれ以上あれば、目安の割合どおりに枠を配る */
 const GROUP_REF = 0.8;

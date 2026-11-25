@@ -11,6 +11,12 @@ import { eventItem } from './ui/events';
 import { DiscoverMap } from './ui/map';
 
 const COUNT = 6;
+/**
+ * 表示しない場所：公園と、遊び場のうち実質は街区公園のもの（「〇〇公園」「児童遊園」など）、遊具単体・園庭など。
+ * 公園はデータの7割を占めて候補が埋まるため。データには残し、イベント会場との照合には使う。
+ */
+const PARKLIKE = /公園|緑地|遊園|広場|ひろば|プレイロット|こうえん|^(鉄棒|ブランコ|迷路|グラウンド)$|ベンチ|バランス|幼稚園|保育|園庭|テニス|囲碁|サイクル/;
+export const isHidden = (s: Spot) => s.cat === 'park' || (s.cat === 'playground' && PARKLIKE.test(s.name));
 /** イベントを最初に並べる件数（「もっと見る」で全部） */
 const EVENT_COUNT = 5;
 
@@ -68,7 +74,8 @@ async function refresh() {
   const req = ++state.req;
   const wide = map.zoom < DETAIL_ZOOM;
   const b = map.bounds();
-  const spots = wide ? await loadHighlights() : await loadBounds(state.meta, b);
+  const loaded = wide ? await loadHighlights() : await loadBounds(state.meta, b);
+  const spots = loaded.filter((s) => !isHidden(s));
   const [news, events] = await Promise.all([loadNews(), loadEvents()]);
   if (req !== state.req) return; // 古い要求は捨てる
 
