@@ -24,6 +24,8 @@ const state = {
   meta: null as Meta | null,
   here: null as [number, number] | null, // 現在地（取得できたときだけ）
   rainy: false,
+  /** 表示をオフにした種類（カテゴリ名、またはイベントは 'event'） */
+  off: new Set(history.prefs.get<string[]>('off', [])),
   when: history.prefs.get<When>('when', 'weekend'),
   eventsOpen: false,
   picks: [] as Spot[],
@@ -75,7 +77,7 @@ async function refresh() {
   const wide = map.zoom < DETAIL_ZOOM;
   const b = map.bounds();
   const loaded = wide ? await loadHighlights() : await loadBounds(state.meta, b);
-  const spots = loaded.filter((s) => !isHidden(s));
+  const spots = loaded.filter((s) => !isHidden(s) && !state.off.has(s.cat));
   const [news, events] = await Promise.all([loadNews(), loadEvents()]);
   if (req !== state.req) return; // 古い要求は捨てる
 
@@ -113,7 +115,7 @@ function renderEvents(box: HTMLElement, data: EventsData | null, b: ReturnType<D
   sec.append(
     h('div', { class: 'events-head' }, h('h2', { class: 'results-title' }, `🗓️ ${wide ? '' : 'この範囲の'}${WHEN_LABEL[state.when]}のイベント`, hits.length ? h('span', { class: 'count' }, ` ${hits.length}件`) : null), seg),
   );
-  map.showEvents(hits.map((x) => x.ev), (id) => {
+  map.showEvents(state.off.has('event') ? [] : hits.map((x) => x.ev), (id) => {
     document.querySelector(`.ev[data-ev="${CSS.escape(id)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   });
 
@@ -272,6 +274,29 @@ function setupLog() {
   });
 }
 
+/** 種類ごとの表示 on/off */
+function setupKinds() {
+  const box = $('#kinds');
+  const kinds: [string, string, string][] = [
+    ['event', '🗓️', 'イベント'],
+    ...(Object.entries(CAT) as [string, (typeof CAT)[keyof typeof CAT]][])
+      .filter(([k]) => k !== 'park')
+      .map(([k, c]) => [k, c.icon, c.label] as [string, string, string]),
+  ];
+  for (const [k, icon, label] of kinds) {
+    const btn = h('button', { type: 'button', class: 'kind', 'aria-pressed': String(!state.off.has(k)), title: label }, `${icon} ${label}`);
+    btn.addEventListener('click', () => {
+      if (state.off.has(k)) state.off.delete(k);
+      else state.off.add(k);
+      btn.setAttribute('aria-pressed', String(!state.off.has(k)));
+      history.prefs.set('off', [...state.off]);
+      state.skip.clear();
+      refresh();
+    });
+    box.append(btn);
+  }
+}
+
 async function init() {
   try {
     state.meta = await loadMeta();
@@ -301,6 +326,7 @@ async function init() {
     refresh();
   });
   setupLog();
+  setupKinds();
 
   const ver = $('#ver');
   ver.textContent = `v${__APP_VERSION__}`;
