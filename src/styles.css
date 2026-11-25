@@ -394,3 +394,4 @@ select { flex: 1; min-width: 0; }
   .topbar .seg button { padding: 3px 7px; }
   .topbar .icon-btn { padding: 4px 8px; }
 }
+.edition { display: inline-block; margin-left: 8px; padding: 0 8px; border: 1px solid var(--line); border-radius: 999px; font-size: 11px; color: var(--ink-soft); vertical-align: 1px; }
