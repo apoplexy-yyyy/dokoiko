@@ -20,8 +20,6 @@ const OSM = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreet
 /** 選べる地図の種類（背景） */
 export const BASEMAPS: Record<string, { label: string; url: string; attribution: string; maxNativeZoom: number }> = {
   osm: { label: 'OpenStreetMap', url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', attribution: OSM, maxNativeZoom: 19 },
-  gsi: { label: '地理院地図（標準）', url: 'https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', attribution: GSI, maxNativeZoom: 18 },
-  pale: { label: '地理院地図（淡色）', url: 'https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png', attribution: GSI, maxNativeZoom: 18 },
   photo: { label: '航空写真', url: 'https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', attribution: GSI, maxNativeZoom: 18 },
 };
 
