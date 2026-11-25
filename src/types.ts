@@ -13,6 +13,7 @@ export type Category =
   | 'farm'
   | 'play'
   | 'kids'
+  | 'creature'
   | 'other';
 
 /** 子供向けポイント（カードにアイコン表示） */
@@ -54,6 +55,10 @@ export interface Spot {
   ha?: number; // 広い公園のおおよその面積(ha)
   t?: number[]; // 特徴語（Meta.terms の添字）
   tl?: string[]; // 収集時のみ使う特徴語ラベル（出力前に t に変換して削除）
+  vis?: number; // 年間来訪者数（千人、神奈川県 入込観光客調査）
+  ages?: string[]; // 対象年齢（乳幼児・小学生など）
+  obs?: { ja: string; n: number; m: number[]; key: number }[]; // 生きもの観察（GBIF）：和名・記録数・記録された月
+  src?: string; // OSM 以外の出典（Overture・神奈川県・GBIF）
 }
 
 /** 特徴語と、県全体での珍しさ（IDF = ln(全スポット数 / その語を持つスポット数)） */

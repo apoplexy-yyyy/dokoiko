@@ -155,6 +155,8 @@ export async function collectOsm(): Promise<OsmWork> {
   const wards = bounds.filter((b) => b.level === 8);
   if (!cities.length) throw new Error("市町村の境界を取得できませんでした");
   console.log(`[osm] 市町村 ${cities.length} / 区 ${wards.length}`);
+  // ほかの情報源（Overture・GBIF・県のデータ）の場所にも市区町村を付けられるよう、境界を保存しておく
+  await writeWork('boundaries.json', bounds.map((b) => ({ name: b.name, level: b.level, segs: b.segs, bbox: b.bbox })));
   const cityOf = (lat: number, lon: number): string | undefined => {
     const c = cities.find((b) => b.contains(lat, lon));
     if (!c) return undefined;

@@ -413,3 +413,5 @@ select { flex: 1; min-width: 0; }
   .when-label { display: none; }
   #open-viewed { padding: 4px 9px; font-size: 13px; }
 }
+.src-note { margin: 6px 0 0; font-size: 11px; color: var(--ink-soft); }
+.src-note a { color: inherit; }

@@ -14,6 +14,9 @@ GitHub Actions（毎週土曜）
   ④  Wikimedia Commons        … 画像サムネイル・作者・ライセンス
   ④' Commons 位置検索         … 写真のない施設の近くで撮られ、ファイル名に施設名を含む写真
   ⑤  自治体RSS 等              … 新着情報（スポット名/市町村で照合）
+  ⑦  GBIF                     … 生きもの観察記録（カブトムシ・クワガタ・ホタル・カワセミなど。CC0/CC BY のみ）を 1km 升目にまとめる
+  ⑧  Overture Maps            … Meta・Microsoft・Foursquare などの施設データ。室内遊び場・観光農園・直売所・美術館など、OSM に無いものを追加
+  ⑨  神奈川県オープンデータ      … 児童館等（開館時間・対象年齢・URL）、入込観光客調査（主要施設の年間来訪者数 → 有名すぎる所は意外性を下げる）
         ↓ build-data（スコアリング・重複除去・0.05°タイル分割・広域用おすすめ抽出）
   public/data/kanagawa/{meta.json, news.json, highlights.json, tiles/*.json}
         ↓ vite build
@@ -38,8 +41,7 @@ GitHub Actions（毎日）
 
 - **TF-IDF**：各スポットに特徴語（タグ由来の「滝」「ミュージアム」、名前由来の「梅」「やぐら→洞窟」「じゃぶじゃぶ→水遊び」など。`config/terms.json`）を付ける。
   語の重み = (1 + ln 表示範囲内の出現数) × IDF（ln 全スポット数 / その語を持つスポット数）。
-  どこにでもある「公園」は低く、県内では珍しいがこの範囲にある語は高くなる。
-  効き具合は凡例のスライダー「いつもの ⇔ 発見！」で変えられる（重みに (0.05 + 0.95×特徴度)^p を掛け、p は左端 0・中央 1・右端 4）重みの大きい語は「この範囲の特徴」として画面に出す
+  どこにでもある「公園」は低く、県内では珍しいがこの範囲にある語は高くなる。重みの大きい語は「この範囲の特徴」として画面に出す
 - 地図の表示範囲が変わるたびに選び直す（ボタン操作なし）
 - 画面は全面の地図。上部の1行にタイトル・キャッチコピー「いつもの週末に、新しい発見を。」、右側にイベントの時期（今日／今週末／2週間）、地図の右上に凡例（種類ごとの表示 on/off、すべてオン／すべてオフ、地図の種類：OpenStreetMap／航空写真）
 - 地図には表示範囲の場所を順位の高い順に置き、ほかのピンと重ならないものはすべて出す。**得点（重み）が高いほどアイコンが大きく濃い**。上位6か所（おすすめ）は必ず出し、縁取りで目立たせる。ほかは得点の高い順に置くので、近くに複数あるときは得点の高いものが残る。名前ラベルも重ならないものだけ表示する
@@ -66,6 +68,7 @@ npm run collect                  # すべて（OSMは数十分かかることが
 npm run collect -- --skip-osm    # OSM取得を省略して ②〜⑤＋統合だけ
 npm run build:data               # .work/ の中間データから再出力だけ
 npm run collect:events           # イベントだけ取り直す（数十秒）
+npm run collect:extra            # Overture・県データ・GBIF だけ取り直す（OSM 取得後に。続けて build:data）
 ```
 
 - HTTP結果は `.cache/` にキャッシュされます（Overpass 20時間、Wikimedia 6日、Commons位置検索 13日、RSS・イベント 6時間）
@@ -79,6 +82,8 @@ npm run collect:events           # イベントだけ取り直す（数十秒）
 | `config/categories.json` | 収集するOSMタグとカテゴリ・子供向け基礎点・屋内フラグ |
 | `config/terms.json` | TF-IDF に使う特徴語（タグ→語、名前に含まれる語） |
 | `config/feeds.json` | 新着情報のRSS/Atom、子供向けキーワード、Google News設定 |
+| `scripts/collect-overture.ts` | Overture のカテゴリ → 疑似 OSM タグの対応、除外する名前 |
+| `scripts/collect-gbif.ts` | 対象にする生きものの一覧 |
 
 ## GitHub Pages で公開
 
@@ -94,6 +99,9 @@ npm run collect:events           # イベントだけ取り直す（数十秒）
 - 画像：Wikimedia Commons（各ファイルの作者・ライセンスをカード上に表示）
 - 新着情報：各自治体サイト（タイトル・日付・リンクのみ保存し、本文は転載しない）
 - イベント：川崎市 かわさきイベントアプリ（CC BY 2.1 JP）、横浜市 イベント情報（タイトル・日付・リンクのみ）
+- 施設：Overture Maps Foundation（CDLA Permissive 2.0。Foursquare 由来は Apache 2.0、AllThePlaces 由来は CC0）
+- 生きもの観察：GBIF.org（CC0・CC BY 4.0 の記録のみ）
+- 児童館等・入込観光客調査：神奈川県オープンデータ（CC BY 4.0）。住所からの座標は国土地理院の住所検索で補完
 
 > **Google News RSS について**：フィードの利用規約が「個人・非商用のフィードリーダー用途」に限定されているため、`config/feeds.json` で既定は無効（`googleNews.enabled: false`）にしています。公開サイトや事業化で使う場合は、利用条件を確認してください。
 

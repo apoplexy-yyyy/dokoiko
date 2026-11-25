@@ -32,8 +32,6 @@ const state = {
   /** 表示をオフにした種類（カテゴリ名、またはイベントは 'event'） */
   off: new Set(history.prefs.get<string[]>('off', [])),
   when: history.prefs.get<When>('when', 'weekend'),
-  /** いつもの(0)〜発見！(100)。TF-IDF の効き具合（50 がふつう） */
-  discover: history.prefs.get<number>('discover', 50),
   skip: new Set<string>(), // 「ほかの場所」で外したもの
   seenAtLoad: history.ids('seen'), // 起動時点で見たことのある場所（表示中に順位が変わらないよう固定）
   seed: todaySeed(),
@@ -105,7 +103,6 @@ async function refresh() {
     skip: state.skip,
     seed: state.seed,
     terms: state.meta.terms,
-    tfidfPower: discoverPower(state.discover),
   });
   const ranked: RankedSpot[] = [
     ...picks.map((s) => ({ s, w: weights.get(s.id) ?? 0, pick: true })),
@@ -116,9 +113,6 @@ async function refresh() {
   for (const s of picks) history.add('seen', s);
 
 }
-
-/** スライダー（0〜100）→ TF-IDF の効き具合。左半分は 0〜1（いつもの〜ふつう）、右半分は 1〜4（ふつう〜発見！） */
-const discoverPower = (v: number) => (v <= 50 ? v / 50 : 1 + ((v - 50) / 50) * 3);
 
 function setWhen(w: When) {
   state.when = w;
@@ -248,15 +242,6 @@ async function init() {
   });
 
   setupAbout();
-  const slider = $<HTMLInputElement>('#discover');
-  slider.value = String(state.discover);
-  let sliderTimer = 0;
-  slider.addEventListener('input', () => {
-    state.discover = Number(slider.value);
-    history.prefs.set('discover', state.discover);
-    clearTimeout(sliderTimer);
-    sliderTimer = window.setTimeout(refresh, 150);
-  });
   setupViewed();
   const baseSel = $<HTMLSelectElement>('#base');
   for (const [k, b] of Object.entries(BASEMAPS)) baseSel.append(h('option', { value: k }, b.label));

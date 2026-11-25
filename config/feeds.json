@@ -1,19 +1,117 @@
 {
-  "keywords": ["子ども", "子供", "こども", "親子", "キッズ", "ファミリー", "家族", "イベント", "体験", "教室", "ワークショップ", "まつり", "祭", "公園", "博物館", "美術館", "展示", "企画展", "動物", "自然", "観察", "工作", "図書館", "おはなし", "読み聞かせ", "水族館", "プラネタリウム", "マルシェ", "収穫", "花"],
-  "excludeKeywords": ["入札", "指定管理", "募集", "公募", "プロポーザル", "ネーミングライツ", "条例", "委託", "契約", "施行", "意見", "パブリックコメント", "審議会", "会議", "選定", "補助金", "給付", "申請", "税", "目撃", "注意", "工事", "通行止", "シニア", "高齢者", "職員", "採用", "防止法"],
+  "keywords": [
+    "子ども",
+    "子供",
+    "こども",
+    "親子",
+    "キッズ",
+    "ファミリー",
+    "家族",
+    "イベント",
+    "体験",
+    "教室",
+    "ワークショップ",
+    "まつり",
+    "祭",
+    "公園",
+    "博物館",
+    "美術館",
+    "展示",
+    "企画展",
+    "動物",
+    "自然",
+    "観察",
+    "工作",
+    "図書館",
+    "おはなし",
+    "読み聞かせ",
+    "水族館",
+    "プラネタリウム",
+    "マルシェ",
+    "収穫",
+    "花"
+  ],
+  "excludeKeywords": [
+    "入札",
+    "指定管理",
+    "募集",
+    "公募",
+    "プロポーザル",
+    "ネーミングライツ",
+    "条例",
+    "委託",
+    "契約",
+    "施行",
+    "意見",
+    "パブリックコメント",
+    "審議会",
+    "会議",
+    "選定",
+    "補助金",
+    "給付",
+    "申請",
+    "税",
+    "目撃",
+    "注意",
+    "工事",
+    "通行止",
+    "シニア",
+    "高齢者",
+    "職員",
+    "採用",
+    "防止法",
+    "婚活",
+    "エイズ",
+    "HIV",
+    "検査",
+    "抽選日",
+    "空き状況",
+    "相談会",
+    "説明会",
+    "求人",
+    "議会",
+    "選挙"
+  ],
   "maxAgeDays": 60,
   "feeds": [
-    { "name": "相模原市", "url": "https://www.city.sagamihara.kanagawa.jp/rss.rss", "city": "相模原市" },
-    { "name": "平塚市", "url": "https://www.city.hiratsuka.kanagawa.jp/rss_top.rdf", "city": "平塚市" },
-    { "name": "茅ヶ崎市", "url": "https://www.city.chigasaki.kanagawa.jp/news.rss", "city": "茅ヶ崎市" },
-    { "name": "逗子市", "url": "https://www.city.zushi.kanagawa.jp/news.rss", "city": "逗子市" },
-    { "name": "海老名市", "url": "https://www.city.ebina.kanagawa.jp/news.rss", "city": "海老名市" },
-    { "name": "座間市", "url": "https://www.city.zama.kanagawa.jp/news.rss", "city": "座間市" }
+    {
+      "name": "相模原市",
+      "url": "https://www.city.sagamihara.kanagawa.jp/rss.rss",
+      "city": "相模原市"
+    },
+    {
+      "name": "平塚市",
+      "url": "https://www.city.hiratsuka.kanagawa.jp/rss_top.rdf",
+      "city": "平塚市"
+    },
+    {
+      "name": "茅ヶ崎市",
+      "url": "https://www.city.chigasaki.kanagawa.jp/news.rss",
+      "city": "茅ヶ崎市"
+    },
+    {
+      "name": "逗子市",
+      "url": "https://www.city.zushi.kanagawa.jp/news.rss",
+      "city": "逗子市"
+    },
+    {
+      "name": "海老名市",
+      "url": "https://www.city.ebina.kanagawa.jp/news.rss",
+      "city": "海老名市"
+    },
+    {
+      "name": "座間市",
+      "url": "https://www.city.zama.kanagawa.jp/news.rss",
+      "city": "座間市"
+    }
   ],
   "googleNews": {
     "enabled": false,
     "note": "Google News RSS の利用規約は個人・非商用のフィードリーダー用途に限定。公開・事業化する場合は有効化しないこと。",
-    "queries": ["神奈川 親子 イベント", "神奈川 子ども 体験"],
+    "queries": [
+      "神奈川 親子 イベント",
+      "神奈川 子ども 体験"
+    ],
     "perCity": true,
     "cityQuerySuffix": "親子"
   }

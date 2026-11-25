@@ -1,7 +1,7 @@
 {
   "name": "dokoiko",
   "private": true,
-  "version": "0.15.1",
+  "version": "0.16.0",
   "type": "module",
   "description": "どこいこ - 子供とのお出かけ先を偶然発見する静的Webアプリ",
   "scripts": {
@@ -14,14 +14,17 @@
     "collect:osm": "tsx scripts/collect-osm.ts",
     "collect:news": "tsx scripts/collect-news.ts",
     "collect:events": "tsx scripts/collect-events.ts",
+    "collect:extra": "tsx scripts/collect-overture.ts && tsx scripts/collect-pref.ts && tsx scripts/collect-gbif.ts",
     "build:data": "tsx scripts/build-data.ts"
   },
   "dependencies": {
     "leaflet": "^1.9.4"
   },
   "devDependencies": {
+    "@duckdb/node-api": "^2.0.1-r.1",
     "@types/leaflet": "^1.9.12",
     "@types/node": "^22.10.0",
+    "exceljs": "^4.4.0",
     "fast-xml-parser": "^4.5.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",

@@ -14,6 +14,11 @@ import { wikiTitle } from './enrich-wikipedia.ts';
 import type { CommonsWork } from './enrich-commons.ts';
 import type { GeoImageWork } from './enrich-commons-geo.ts';
 import type { RawNews } from './collect-news.ts';
+import type { OvertureSpot } from './collect-overture.ts';
+import type { PrefKids, PrefVisitors } from './collect-pref.ts';
+import type { GbifObs } from './collect-gbif.ts';
+import { applyVisitors, gbifSpots, mergeOverture, mergePrefKids } from './lib/merge.ts';
+import { loadCityOf } from './lib/cities.ts';
 
 const OUT = join('public', 'data', region.id);
 
@@ -70,6 +75,21 @@ export async function buildData() {
     if (s) built.push(s);
   }
   const spots = dedupe(built);
+
+  // OSM 以外の情報源を統合（それぞれ無ければ飛ばす）
+  const extra = {
+    prefKids: mergePrefKids(spots, await readWork<PrefKids[]>('pref-kids.json', []), near),
+    overture: mergeOverture(spots, await readWork<OvertureSpot[]>('overture.json', []), near),
+    gbif: 0,
+    visitors: applyVisitors(spots, await readWork<PrefVisitors[]>('pref-visitors.json', [])),
+  };
+  const gbif = await readWork<GbifObs[]>('gbif.json', []);
+  if (gbif.length) {
+    const g = gbifSpots(gbif, await loadCityOf());
+    spots.push(...g);
+    extra.gbif = g.length;
+  }
+  console.log('[build] 追加した情報源', extra);
 
   // ニュース照合（市町村名は「横浜市緑区」→「横浜市」の単位にそろえる）
   const municipalities = [...new Set(spots.map((s) => s.city?.match(/^.+?[市町村]/)?.[0] ?? s.city).filter((c): c is string => !!c))];
@@ -129,6 +149,9 @@ export async function buildData() {
       { name: 'Wikidata', license: 'CC0', url: 'https://www.wikidata.org/' },
       { name: 'Wikipedia', license: 'CC BY-SA 4.0', url: 'https://ja.wikipedia.org/' },
       { name: 'Wikimedia Commons', license: '各ファイルのライセンス', url: 'https://commons.wikimedia.org/' },
+      { name: 'Overture Maps', license: 'CDLA Permissive 2.0（Foursquare 由来は Apache 2.0）', url: 'https://overturemaps.org/' },
+      { name: 'GBIF.org 生きもの観察記録', license: 'CC0・CC BY 4.0', url: 'https://www.gbif.org/' },
+      { name: '神奈川県オープンデータ（児童館等・入込観光客調査）', license: 'CC BY 4.0', url: 'https://catalog.opendata.pref.kanagawa.jp/' },
       ...feeds.feeds.map((f) => ({ name: f.name + ' 新着情報', license: '各サイトの利用規約', url: new URL(f.url).origin })),
     ],
   };

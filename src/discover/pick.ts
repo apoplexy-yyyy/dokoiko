@@ -28,7 +28,7 @@ export interface RankOptions {
 /** ジャンルのグループと、そのグループが選ばれる目安の割合 */
 export const GROUPS: Record<string, { cats: Category[]; share: number }> = {
   park: { cats: ['park', 'playground'], share: 0.15 },
-  nature: { cats: ['nature', 'water', 'view'], share: 0.2 },
+  nature: { cats: ['nature', 'water', 'view', 'creature'], share: 0.2 },
   learn: { cats: ['museum', 'library', 'history'], share: 0.2 },
   kids: { cats: ['kids'], share: 0.2 },
   fun: { cats: ['zoo', 'play', 'farm', 'other'], share: 0.25 },
