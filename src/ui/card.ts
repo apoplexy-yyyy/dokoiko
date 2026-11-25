@@ -6,6 +6,7 @@ import { history } from './history';
 import { CAT, FEAT, googleSearchUrl, travelText } from './labels';
 
 export interface CardContext {
+  /** 番号（0始まり）。負なら番号を出さない */
   index: number;
   distKm?: number;
   distFrom: string;
@@ -58,7 +59,7 @@ export function renderCard(s: Spot, ctx: CardContext): HTMLElement {
     img
       ? h('img', { src: img, alt: s.name, loading: 'lazy', referrerpolicy: 'no-referrer' })
       : h('span', { class: 'card-emoji', 'aria-hidden': 'true' }, c.icon),
-    h('span', { class: 'card-num' }, String(ctx.index + 1)),
+    ctx.index >= 0 ? h('span', { class: 'card-num' }, String(ctx.index + 1)) : null,
     ctx.isNew ? h('span', { class: 'card-new' }, 'はじめて') : null,
   );
   if (img && s.img)

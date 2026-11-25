@@ -1,10 +1,19 @@
-// Leaflet 地図：表示範囲の候補（番号ピン）・現在地・これまでに見た場所を表示し、地図の移動を通知する
+// Leaflet 地図：場所（得点に応じた大きさ）・イベント・現在地・これまでに見た場所を表示し、地図の移動を通知する
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { Bounds } from '../discover/pick';
-import type { EventItem, Spot } from '../types';
+import type { EventHit } from '../discover/events';
+import type { Spot } from '../types';
 import type { SavedSpot } from './history';
-import { CAT, googleSearchUrl, shortName } from './labels';
+import { CAT, shortName } from './labels';
+
+export interface RankedSpot {
+  s: Spot;
+  /** 重み（得点） */
+  w: number;
+  /** おすすめ（必ず表示し、目立たせる） */
+  pick: boolean;
+}
 
 export class DiscoverMap {
   private map: L.Map;
@@ -30,11 +39,30 @@ export class DiscoverMap {
     this.hereLayer.addTo(this.map);
     this.pickLayer.addTo(this.map);
     // 連続した移動はまとめて1回だけ通知
+    // 吹き出しを開いている間（自動スクロールを含む）は選び直さず、閉じたときにまとめて選び直す
+    let popupOpen = false;
+    let pending = false;
     const notify = () => {
+      if (popupOpen) {
+        pending = true;
+        return;
+      }
       clearTimeout(this.timer);
       this.timer = window.setTimeout(onMove, 200);
     };
     this.map.on('moveend', notify);
+    this.map.on('popupopen', () => {
+      popupOpen = true;
+      el.parentElement?.classList.add('popup-open');
+    });
+    this.map.on('popupclose', () => {
+      popupOpen = false;
+      el.parentElement?.classList.remove('popup-open');
+      if (pending) {
+        pending = false;
+        notify();
+      }
+    });
     // 読み込み時に地図の大きさが 0（非表示のタブなど）だと範囲が求まらないので、大きさが変わったら選び直す
     let size = `${el.clientWidth}x${el.clientHeight}`;
     new ResizeObserver(() => {
@@ -128,141 +156,103 @@ export class DiscoverMap {
     }).addTo(this.hereLayer);
   }
 
-  showPicks(picks: Spot[], onSelect: (id: string) => void) {
-    this.pickLayer.clearLayers();
-    this.pickMarkers.clear();
-    picks.forEach((s, i) => {
-      const c = CAT[s.cat];
-      const m = L.marker([s.lat, s.lon], {
-        icon: L.divIcon({
-          className: 'pick-pin',
-          html: `<span style="--c:${c.color}"><b>${i + 1}</b></span>`,
-          iconSize: [36, 44],
-          iconAnchor: [18, 42],
-        }),
-        title: s.name,
-        riseOnHover: true,
-      });
-      // 「川崎市〇〇こども文化センター」などは市名を省いて短く
-      m.bindTooltip(shortName(s.name), { permanent: true, direction: 'right', offset: [14, -24], className: 'pin-label', interactive: true });
-      m.on('click', () => onSelect(s.id));
-      m.getTooltip()?.on('click', () => onSelect(s.id));
-      m.addTo(this.pickLayer);
-      this.pickMarkers.set(s.id, m);
-    });
-    this.declutterSoon();
-  }
-
-  /** イベント会場（座標が分かるものだけ）。同じ会場は1つのピンにまとめる */
-  showEvents(list: EventItem[], onSelect: (id: string) => void) {
-    this.eventLayer.clearLayers();
-    this.eventMarkers.clear();
-    const byPlace = new Map<string, EventItem[]>();
-    for (const ev of list) {
-      if (ev.approx) continue;
-      const k = `${ev.lat.toFixed(4)},${ev.lon.toFixed(4)}`;
-      byPlace.set(k, [...(byPlace.get(k) ?? []), ev]);
-    }
-    for (const evs of byPlace.values()) {
-      const m = L.marker([evs[0].lat, evs[0].lon], {
-        icon: L.divIcon({
-          className: 'event-pin',
-          html: `<span>🗓️${evs.length > 1 ? `<b>${evs.length}</b>` : ''}</span>`,
-          iconSize: [30, 30],
-          iconAnchor: [15, 15],
-        }),
-        title: evs.map((e) => e.title).join(' / '),
-        riseOnHover: true,
-      });
-      // 会場名（なければイベント名）を添える。長いものは短く
-      const label = evs[0].spotName ?? evs[0].venue ?? evs[0].title;
-      m.bindTooltip(label.length > 14 ? label.slice(0, 14) + '…' : label, {
-        permanent: true,
-        direction: 'right',
-        offset: [12, 0],
-        className: 'pin-label event-label',
-        interactive: true,
-      });
-      m.on('click', () => onSelect(evs[0].id));
-      m.getTooltip()?.on('click', () => onSelect(evs[0].id));
-      m.addTo(this.eventLayer);
-      for (const e of evs) this.eventMarkers.set(e.id, m);
-    }
-    this.declutterSoon();
-  }
-
-  highlightEvent(id: string) {
-    const el = this.eventMarkers.get(id)?.getElement();
-    if (!el) return;
-    el.classList.remove('bounce');
-    void el.offsetWidth;
-    el.classList.add('bounce');
-  }
-
   /**
-   * 候補以外の場所も、ほかのピンと重ならないものはすべて小さな丸で出す（順位の高い順に置いていく）
+   * 場所のピン。得点が高いほど大きく濃く表示する。
+   * 順位の高い順に置き、すでに置いたピンと重なるものは出さない（おすすめ＝pick は必ず出す）。
    * @returns 表示した数
    */
-  showOthers(spots: Spot[]): number {
+  showSpots(list: RankedSpot[], popup: (s: Spot) => HTMLElement): number {
+    this.pickLayer.clearLayers();
     this.otherLayer.clearLayers();
+    this.pickMarkers.clear();
     this.otherMarkers = [];
     const size = this.map.getSize();
-    const MIN = 26; // ピンどうしの最小間隔(px)
-    const taken: L.Point[] = [];
-    for (const m of [...this.pickMarkers.values(), ...this.eventMarkers.values()]) taken.push(this.map.latLngToContainerPoint(m.getLatLng()));
-    for (const s of spots.slice(0, 600)) {
+    const taken: { pt: L.Point; r: number }[] = [...this.eventMarkers.values()].map((m) => ({
+      pt: this.map.latLngToContainerPoint(m.getLatLng()),
+      r: 15,
+    }));
+    const wmax = Math.max(1e-9, ...list.map((x) => x.w));
+    let shown = 0;
+    for (const x of list.slice(0, 800)) {
+      const { s } = x;
+      const score = Math.sqrt(x.w / wmax); // 0〜1
+      const px = Math.round(x.pick ? Math.max(40, 30 + 16 * score) : 20 + 18 * score);
+      const r = px / 2;
       const pt = this.map.latLngToContainerPoint([s.lat, s.lon]);
-      if (pt.x < 8 || pt.y < 8 || pt.x > size.x - 8 || pt.y > size.y - 8) continue;
-      if (taken.some((t) => t.distanceTo(pt) < MIN)) continue;
-      taken.push(pt);
+      if (!x.pick) {
+        if (pt.x < r || pt.y < r || pt.x > size.x - r || pt.y > size.y - r) continue;
+        if (taken.some((t) => t.pt.distanceTo(pt) < (t.r + r) * 0.9)) continue;
+      }
+      taken.push({ pt, r });
       const c = CAT[s.cat] ?? CAT.other;
       const m = L.marker([s.lat, s.lon], {
-        icon: L.divIcon({ className: 'spot-dot', html: `<span style="--c:${c.color}">${c.icon}</span>`, iconSize: [22, 22], iconAnchor: [11, 11] }),
+        icon: L.divIcon({
+          className: `spot-pin${x.pick ? ' pick' : ''}`,
+          html: `<span style="--c:${c.color};--s:${px}px;opacity:${(0.7 + 0.3 * score).toFixed(2)}">${c.icon}</span>`,
+          iconSize: [px, px],
+          iconAnchor: [r, r],
+        }),
         title: s.name,
+        riseOnHover: true,
+        zIndexOffset: Math.round(score * 1000) + (x.pick ? 2000 : 0),
       });
       m.bindTooltip(shortName(s.name), {
         permanent: true,
         direction: 'right',
-        offset: [10, 0],
-        className: 'pin-label other-label',
+        offset: [r + 2, 0],
+        className: `pin-label${x.pick ? '' : ' other-label'}`,
         interactive: true,
       });
-      const pop = document.createElement('div');
-      pop.className = 'spot-pop';
-      const b = document.createElement('b');
-      b.textContent = s.name;
-      const meta = document.createElement('span');
-      meta.textContent = [`${c.icon} ${c.label}`, s.city].filter(Boolean).join('・');
-      const a = document.createElement('a');
-      a.href = `https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lon}`;
-      a.target = '_blank';
-      a.rel = 'noopener';
-      a.textContent = '🧭 行き方';
-      const g = document.createElement('a');
-      g.href = googleSearchUrl(s.name, s.city);
-      g.target = '_blank';
-      g.rel = 'noopener';
-      g.textContent = '🔍 Google';
-      const links = document.createElement('span');
-      links.className = 'spot-pop-links';
-      links.append(g, a);
-      pop.append(b, meta, links);
-      m.bindPopup(pop);
+      m.bindPopup(() => popup(s), { maxWidth: 340, minWidth: 260, autoPanPadding: [16, 16], className: 'card-popup' });
       m.getTooltip()?.on('click', () => m.openPopup());
-      m.addTo(this.otherLayer);
-      this.otherMarkers.push(m);
+      m.addTo(x.pick ? this.pickLayer : this.otherLayer);
+      if (x.pick) this.pickMarkers.set(s.id, m);
+      else this.otherMarkers.push(m);
+      shown++;
     }
     this.declutterSoon();
-    return this.otherMarkers.length;
+    return shown;
   }
 
-  /** ピンを跳ねさせる（地図は動かさない＝候補が入れ替わらない） */
-  highlight(id: string) {
-    const el = this.pickMarkers.get(id)?.getElement();
-    if (!el) return;
-    el.classList.remove('bounce');
-    void el.offsetWidth;
-    el.classList.add('bounce');
+  /**
+   * イベントのピン。会場の座標が分かるものは会場ごと、分からないもの（横浜市）は区の中心にまとめる。
+   */
+  showEvents(hits: EventHit[], popup: (hits: EventHit[]) => HTMLElement) {
+    this.eventLayer.clearLayers();
+    this.eventMarkers.clear();
+    const groups = new Map<string, EventHit[]>();
+    for (const x of hits) {
+      const k = x.ev.approx ? `area:${x.ev.city}` : `${x.ev.lat.toFixed(4)},${x.ev.lon.toFixed(4)}`;
+      groups.set(k, [...(groups.get(k) ?? []), x]);
+    }
+    for (const list of groups.values()) {
+      const ev = list[0].ev;
+      const m = L.marker([ev.lat, ev.lon], {
+        icon: L.divIcon({
+          className: `event-pin${ev.approx ? ' approx' : ''}`,
+          html: `<span>🗓️${list.length > 1 ? `<b>${list.length}</b>` : ''}</span>`,
+          iconSize: [30, 30],
+          iconAnchor: [15, 15],
+        }),
+        title: list.map((x) => x.ev.title).join(' / '),
+        riseOnHover: true,
+        zIndexOffset: 1500,
+      });
+      // 会場名（なければイベント名）を添える。長いものは短く
+      const label = ev.approx ? `${ev.city.replace(/^横浜市/, '')}のイベント` : (ev.spotName ?? ev.venue ?? ev.title);
+      m.bindTooltip(label.length > 14 ? label.slice(0, 14) + '…' : label, {
+        permanent: true,
+        direction: 'right',
+        offset: [15, 0],
+        className: 'pin-label event-label',
+        interactive: true,
+      });
+      m.bindPopup(() => popup(list), { maxWidth: 360, minWidth: 260, autoPanPadding: [16, 16], className: 'event-popup' });
+      m.getTooltip()?.on('click', () => m.openPopup());
+      m.addTo(this.eventLayer);
+      for (const x of list) this.eventMarkers.set(x.ev.id, m);
+    }
+    this.declutterSoon();
   }
 
   showFound(list: SavedSpot[]) {
@@ -277,6 +267,10 @@ export class DiscoverMap {
         interactive: false,
       }).addTo(this.foundLayer);
     }
+  }
+
+  closePopup() {
+    this.map.closePopup();
   }
 
   invalidate() {

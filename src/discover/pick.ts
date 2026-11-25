@@ -112,7 +112,7 @@ export function rankInView(
   spots: Spot[],
   bounds: Bounds,
   opts: RankOptions,
-): { picks: Spot[]; others: Spot[]; total: number; keywords: AreaKeyword[] } {
+): { picks: Spot[]; others: Spot[]; weights: Map<string, number>; total: number; keywords: AreaKeyword[] } {
   const inView = spots.filter((s) => inBounds(s, bounds) && !opts.skip?.has(s.id));
   const { score, keywords } = areaTfIdf(inView, opts.terms ?? []);
   const useTfIdf = !!opts.terms?.length;
@@ -157,7 +157,8 @@ export function rankInView(
   // 選ばれなかった場所も、同じ重み付きランダムの順に並べて返す（地図に重ならない範囲で出す）
   const chosen = new Set(picks.map((s) => s.id));
   const others = pool.filter((x) => !chosen.has(x.s.id)).sort((a, b) => b.key - a.key).map((x) => x.s);
-  return { picks, others, total, keywords };
+  const weights = new Map(pool.map((x) => [x.s.id, x.w]));
+  return { picks, others, weights, total, keywords };
 }
 
 /** 今日の日付（ローカル）を乱数の種にする */
