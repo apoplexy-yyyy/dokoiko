@@ -8,7 +8,7 @@ import { $, h, safeUrl } from './ui/dom';
 import { eventItem } from './ui/events';
 import { history } from './ui/history';
 import { CAT } from './ui/labels';
-import { DiscoverMap, type RankedSpot } from './ui/map';
+import { BASEMAPS, DiscoverMap, type RankedSpot } from './ui/map';
 
 /** おすすめ（大きく、必ず表示する）の数 */
 const COUNT = 6;
@@ -114,7 +114,8 @@ async function refresh() {
   });
   const ranked: RankedSpot[] = [
     ...picks.map((s) => ({ s, w: weights.get(s.id) ?? 0, pick: true })),
-    ...others.map((s) => ({ s, w: weights.get(s.id) ?? 0, pick: false })),
+    // おすすめ以外は得点の高い順に置く（近くに複数あるときは得点の高いものが残る）
+    ...others.map((s) => ({ s, w: weights.get(s.id) ?? 0, pick: false })).sort((a, b) => b.w - a.w),
   ];
   map.showSpots(ranked, spotPopup);
   for (const s of picks) history.add('seen', s);
@@ -192,13 +193,20 @@ async function init() {
   const meta = state.meta;
   const view = history.prefs.get<{ lat: number; lon: number; z: number } | null>('view', null);
   const start = view && inRegion(view.lat, view.lon) ? view : { lat: meta.center[0], lon: meta.center[1], z: 10 };
-  map = new DiscoverMap($('#map'), [start.lat, start.lon], start.z, () => {
+  map = new DiscoverMap($('#map'), [start.lat, start.lon], start.z, history.prefs.get<string>('base', 'osm'), () => {
     const [lat, lon] = map.center;
     history.prefs.set('view', { lat, lon, z: map.zoom });
     refresh();
   });
 
   setupAbout();
+  const baseSel = $<HTMLSelectElement>('#base');
+  for (const [k, b] of Object.entries(BASEMAPS)) baseSel.append(h('option', { value: k }, b.label));
+  baseSel.value = map.base;
+  baseSel.addEventListener('change', () => {
+    map.setBase(baseSel.value);
+    history.prefs.set('base', baseSel.value);
+  });
   setupLegend();
   setupWhen();
 

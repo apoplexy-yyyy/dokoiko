@@ -367,3 +367,6 @@ select { flex: 1; min-width: 0; }
 .brand-sub .seg button { padding: 1px 10px; font-size: 13px; line-height: 1.5; }
 .topbar { padding-bottom: 10px; }
 .leaflet-popup.below .leaflet-popup-tip-container { display: none; }
+
+.legend-base { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 12px; color: var(--ink-soft); }
+.legend-base select { flex: 1; min-width: 0; font-size: 12px; padding: 2px 4px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); }

@@ -15,6 +15,16 @@ export interface RankedSpot {
   pick: boolean;
 }
 
+const GSI = '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院</a>';
+const OSM = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+/** 選べる地図の種類（背景） */
+export const BASEMAPS: Record<string, { label: string; url: string; attribution: string; maxNativeZoom: number }> = {
+  osm: { label: 'OpenStreetMap', url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', attribution: OSM, maxNativeZoom: 19 },
+  gsi: { label: '地理院地図（標準）', url: 'https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', attribution: GSI, maxNativeZoom: 18 },
+  pale: { label: '地理院地図（淡色）', url: 'https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png', attribution: GSI, maxNativeZoom: 18 },
+  photo: { label: '航空写真', url: 'https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', attribution: GSI, maxNativeZoom: 18 },
+};
+
 export class DiscoverMap {
   private map: L.Map;
   private hereLayer = L.layerGroup();
@@ -26,13 +36,23 @@ export class DiscoverMap {
   private otherLayer = L.layerGroup();
   private otherMarkers: L.Marker[] = [];
   private timer = 0;
+  private baseLayer?: L.TileLayer;
+  base = 'osm';
 
-  constructor(el: HTMLElement, center: [number, number], zoom: number, onMove: () => void) {
+  /** 地図の種類（背景）を切り替える */
+  setBase(key: string) {
+    const b = BASEMAPS[key] ?? BASEMAPS.osm;
+    this.base = BASEMAPS[key] ? key : 'osm';
+    this.baseLayer?.remove();
+    // 場所のデータは OpenStreetMap 由来なので、背景を変えても OSM の出典は残す
+    const attribution = b.attribution === OSM ? OSM : `${b.attribution}｜場所のデータ ${OSM}`;
+    this.baseLayer = L.tileLayer(b.url, { maxZoom: 19, maxNativeZoom: b.maxNativeZoom, attribution }).addTo(this.map);
+    this.baseLayer.bringToBack();
+  }
+
+  constructor(el: HTMLElement, center: [number, number], zoom: number, base: string, onMove: () => void) {
     this.map = L.map(el, { zoomControl: true, attributionControl: true, minZoom: 9 }).setView(center, zoom);
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    }).addTo(this.map);
+    this.setBase(base);
     this.foundLayer.addTo(this.map);
     this.otherLayer.addTo(this.map);
     this.eventLayer.addTo(this.map);
