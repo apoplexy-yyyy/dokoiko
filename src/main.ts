@@ -29,8 +29,6 @@ const KINDS: { key: string; icon: string; label: string; color: string }[] = [
 
 const state = {
   meta: null as Meta | null,
-  here: null as [number, number] | null, // 現在地（取得できたときだけ）
-  rainy: false,
   /** 表示をオフにした種類（カテゴリ名、またはイベントは 'event'） */
   off: new Set(history.prefs.get<string[]>('off', [])),
   when: history.prefs.get<When>('when', 'weekend'),
@@ -51,26 +49,6 @@ function inRegion(lat: number, lon: number) {
   return lat >= b[0] && lat <= b[2] && lon >= b[1] && lon <= b[3];
 }
 
-function locate() {
-  if (!navigator.geolocation) return status('この端末では現在地を取得できません。');
-  status('現在地を確認しています…');
-  navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      const { latitude: lat, longitude: lon } = pos.coords;
-      if (!inRegion(lat, lon)) {
-        status(`現在地が${state.meta!.name}の外のようです。いまは${state.meta!.name}のみ対応しています。`);
-        return;
-      }
-      state.here = [lat, lon];
-      map.setHere(lat, lon);
-      map.flyTo(lat, lon, 14);
-      status('');
-    },
-    () => status('現在地を取得できませんでした。地図を動かして探してください。'),
-    { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 },
-  );
-}
-
 function newsFor(spot: Spot, news: NewsData | null): { spotNews: NewsItem[]; cityNews: NewsItem[] } {
   if (!news) return { spotNews: [], cityNews: [] };
   const cityKey = spot.city ? Object.keys(news.byCity).find((k) => spot.city!.startsWith(k)) : undefined;
@@ -79,12 +57,12 @@ function newsFor(spot: Spot, news: NewsData | null): { spotNews: NewsItem[]; cit
 
 /** 場所のピンを押したときの吹き出し（カード） */
 function spotPopup(s: Spot): HTMLElement {
-  const ref = state.here ?? map.center;
+  const ref = map.center;
   return renderCard(s, {
     index: -1,
     isNew: !state.seenAtLoad.has(s.id),
     distKm: distKm(ref[0], ref[1], s.lat, s.lon),
-    distFrom: state.here ? '現在地から ' : '地図の中心から ',
+    distFrom: '地図の中心から ',
     tags: (s.t ?? []).map((i) => state.meta!.terms[i]).filter((t) => t && t.idf >= 1.5).map((t) => t.label),
     ...newsFor(s, state.news),
     events: (state.events?.events ?? []).filter((e) => e.spot === s.id),
@@ -94,7 +72,6 @@ function spotPopup(s: Spot): HTMLElement {
       refresh();
     },
     onFocus: () => {},
-    onChange: updateCounts,
   });
 }
 
@@ -127,9 +104,9 @@ async function refresh() {
   const hits = state.off.has('event') ? [] : eventsInView(allEvents, b, whenDays(state.when));
   map.showEvents(hits, eventPopup);
 
-  const { picks, others, weights, total, keywords } = rankInView(spots, b, {
+  const { picks, others, weights } = rankInView(spots, b, {
     count: COUNT,
-    rainy: state.rainy,
+    rainy: false,
     seen: state.seenAtLoad,
     skip: state.skip,
     seed: state.seed,
@@ -139,46 +116,9 @@ async function refresh() {
     ...picks.map((s) => ({ s, w: weights.get(s.id) ?? 0, pick: true })),
     ...others.map((s) => ({ s, w: weights.get(s.id) ?? 0, pick: false })),
   ];
-  const shown = map.showSpots(ranked, spotPopup);
+  map.showSpots(ranked, spotPopup);
   for (const s of picks) history.add('seen', s);
-  updateCounts();
 
-  // 地図の下の情報（件数・この範囲の特徴・イベントの有無）
-  const info = $('#area-info');
-  info.replaceChildren();
-  if (!total) {
-    if (KINDS.every((k) => state.off.has(k.key))) info.append(h('p', {}, 'すべての種類がオフになっています。右上の「表示する種類」でオンにしてください。'));
-    else info.append(h('p', {}, state.rainy ? 'この範囲には屋内の場所がありません。地図を広げてみてください。' : 'この範囲には場所がありません。地図を動かすか、縮小してみてください。'));
-  } else {
-    info.append(
-      h(
-        'p',
-        {},
-        wide ? `${state.meta.name}のおすすめ ${total.toLocaleString()} か所から ${shown} か所を表示` : `この範囲の ${total.toLocaleString()} か所から ${shown} か所を表示`,
-        hits.length ? `・${WHEN_LABEL[state.when]}のイベント ${hits.length} 件` : '',
-      ),
-    );
-    if (keywords.length)
-      info.append(
-        h(
-          'p',
-          { class: 'area-keywords' },
-          h('span', { class: 'area-keywords-label' }, wide ? '県内の特徴' : 'この範囲の特徴'),
-          ...keywords.map((k) => h('span', { class: 'kw' }, k.count > 1 ? `${k.label} ${k.count}` : k.label)),
-        ),
-      );
-  }
-  if (!state.off.has('event') && !hits.length) {
-    const inArea = allEvents.some((e) => e.lat >= b.south && e.lat <= b.north && e.lon >= b.west && e.lon <= b.east);
-    const soon = state.when === 'soon' ? [] : eventsInView(allEvents, b, whenDays('soon'));
-    const p = h('p', { class: 'hint' }, inArea || !allEvents.length ? `${WHEN_LABEL[state.when]}のイベントはこの範囲にありません。` : 'この範囲のイベント情報はまだありません（いまは川崎市・横浜市のみ）。');
-    if (soon.length) {
-      const more = h('button', { type: 'button', class: 'link-btn' }, `2週間以内なら ${soon.length} 件 →`);
-      more.addEventListener('click', () => setWhen('soon'));
-      p.append(' ', more);
-    }
-    info.append(p);
-  }
 }
 
 function setWhen(w: When) {
@@ -188,68 +128,12 @@ function setWhen(w: When) {
   refresh();
 }
 
-function updateCounts() {
-  const seen = history.list('seen');
-  $('#found-count').textContent = String(seen.length);
-  $('#log-count').textContent = String(history.list('want').length + history.list('went').length);
-  map.showFound(seen);
-}
-
-function setupLog() {
-  const dlg = $<HTMLDialogElement>('#log');
-  let tab: 'want' | 'went' | 'seen' = 'want';
-  const render = () => {
-    dlg.querySelectorAll<HTMLButtonElement>('[role=tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
-    const list = history.list(tab).slice().reverse();
-    const ul = $('#log-list');
-    ul.replaceChildren(
-      ...(list.length
-        ? list.map((s) => {
-            const c = CAT[s.cat] ?? CAT.other;
-            const li = h(
-              'li',
-              {},
-              h('span', { class: 'log-icon', style: `--c:${c.color}` }, c.icon),
-              h('span', { class: 'log-name' }, s.name),
-              h('a', { href: `https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lon}`, target: '_blank', rel: 'noopener' }, '行き方'),
-            );
-            if (tab !== 'seen') {
-              const rm = h('button', { type: 'button', class: 'ghost-btn', 'aria-label': `${s.name}を削除` }, '✕');
-              rm.addEventListener('click', () => {
-                history.remove(tab, s.id);
-                render();
-                updateCounts();
-              });
-              li.append(rm);
-            }
-            return li;
-          })
-        : [
-            h(
-              'li',
-              { class: 'empty' },
-              tab === 'want' ? '「⭐ 行ってみたい」を押した場所がここに並びます。' : tab === 'went' ? '行った場所を記録すると、ここに並びます。' : 'まだ見た場所はありません。',
-            ),
-          ]),
-    );
-  };
-  $('#open-log').addEventListener('click', () => {
-    render();
-    dlg.showModal();
-  });
-  dlg.querySelector('.tabs')!.addEventListener('click', (e) => {
-    const b = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-tab]');
-    if (b) {
-      tab = b.dataset.tab as typeof tab;
-      render();
-    }
-  });
+function setupAbout() {
   const about = $<HTMLDialogElement>('#about');
   $('#open-about').addEventListener('click', () => about.showModal());
-  for (const d of [dlg, about])
-    d.addEventListener('click', (e) => {
-      if (e.target === d) d.close();
-    });
+  about.addEventListener('click', (e) => {
+    if (e.target === about) about.close();
+  });
 }
 
 /** 地図上の凡例：種類ごとの表示 on/off */
@@ -292,7 +176,7 @@ function setupLegend() {
 function setupWhen() {
   const seg = $('#when');
   for (const w of Object.keys(WHEN_LABEL) as When[]) {
-    const btn = h('button', { type: 'button', 'data-when': w, 'aria-pressed': String(state.when === w) }, `🗓️ ${WHEN_LABEL[w]}`);
+    const btn = h('button', { type: 'button', 'data-when': w, 'aria-pressed': String(state.when === w) }, WHEN_LABEL[w]);
     btn.addEventListener('click', () => setWhen(w));
     seg.append(btn);
   }
@@ -314,19 +198,7 @@ async function init() {
     refresh();
   });
 
-  const sel = $<HTMLSelectElement>('#city');
-  for (const c of meta.cities) sel.append(h('option', { value: c.name }, c.name));
-  sel.addEventListener('change', () => {
-    const c = meta.cities.find((x) => x.name === sel.value);
-    if (c) map.flyTo(c.lat, c.lon, 13);
-  });
-
-  $('#locate').addEventListener('click', locate);
-  $<HTMLInputElement>('#rainy').addEventListener('change', (e) => {
-    state.rainy = (e.target as HTMLInputElement).checked;
-    refresh();
-  });
-  setupLog();
+  setupAbout();
   setupLegend();
   setupWhen();
 
@@ -348,7 +220,6 @@ async function init() {
     );
   });
 
-  updateCounts();
   window.addEventListener('resize', () => map.invalidate());
   // フォント読み込み等でレイアウトが変わった後にタイルを描き直す
   requestAnimationFrame(() => map.invalidate());

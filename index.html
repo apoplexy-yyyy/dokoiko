@@ -18,23 +18,11 @@
           <span class="brand-mark" aria-hidden="true">✦</span>
           <div class="brand-text">
             <h1 class="brand-name">どこいこ <span class="ver" id="ver"></span></h1>
-            <p class="brand-sub">今日、子供とどこに行こう？ 地図を動かすと、その範囲の子供向けイベントと行ける場所が出てきます。</p>
+            <p class="brand-sub">今日、子供とどこに行こう？ 地図を動かすと、その範囲の<span class="seg" id="when" role="group" aria-label="イベントの時期"></span>のイベントと、子供と行ける場所が出てきます。</p>
           </div>
           <div class="brand-actions">
-            <button class="ghost-btn" id="open-log" type="button">きろく <span id="log-count" class="badge">0</span></button>
             <button class="ghost-btn icon-btn" id="open-about" type="button" aria-label="このサイトについて・出典">ⓘ</button>
           </div>
-        </div>
-        <div class="tools">
-          <button class="chip-btn" id="locate" type="button">📍 現在地へ</button>
-          <select id="city" aria-label="市区町村へ移動">
-            <option value="">市区町村へ移動</option>
-          </select>
-          <label class="toggle">
-            <input type="checkbox" id="rainy" />
-            <span>☔ 雨の日（屋内だけ）</span>
-          </label>
-          <div class="seg" id="when" role="group" aria-label="イベントの日付"></div>
         </div>
         <p class="status" id="status" role="status"></p>
       </header>
@@ -48,9 +36,8 @@
             <button type="button" id="all-off">すべてオフ</button>
           </div>
           <div class="kinds" id="kinds" role="group" aria-label="表示する種類"></div>
-          <p class="legend-note">大きく濃いアイコンほどおすすめ。<span class="dot dot-found"></span>これまでに見た場所 <span id="found-count">0</span></p>
+          <p class="legend-note">大きく濃いアイコンほどおすすめ。押すと詳しい情報が出ます。</p>
         </details>
-        <div class="area-info" id="area-info" aria-live="polite"></div>
       </main>
     </div>
 
@@ -64,18 +51,6 @@
       <p class="sources" id="sources"></p>
     </dialog>
 
-    <dialog id="log" class="log">
-      <form method="dialog" class="log-head">
-        <h2>きろく</h2>
-        <button class="ghost-btn" value="close" aria-label="閉じる">✕</button>
-      </form>
-      <div class="tabs" role="tablist">
-        <button role="tab" data-tab="want" aria-selected="true">⭐ 行ってみたい</button>
-        <button role="tab" data-tab="went">✅ 行った</button>
-        <button role="tab" data-tab="seen">✦ 見た場所</button>
-      </div>
-      <ul id="log-list" class="log-list"></ul>
-    </dialog>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

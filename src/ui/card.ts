@@ -2,7 +2,6 @@
 import type { EventItem, NewsItem, Spot } from '../types';
 import { spotEvents } from './events';
 import { h, safeUrl } from './dom';
-import { history } from './history';
 import { CAT, FEAT, googleSearchUrl, travelText } from './labels';
 
 export interface CardContext {
@@ -19,7 +18,6 @@ export interface CardContext {
   events: EventItem[];
   onReplace: () => void;
   onFocus: () => void;
-  onChange: () => void;
 }
 
 const fmtDate = (iso?: string) => {
@@ -92,16 +90,6 @@ export function renderCard(s: Spot, ctx: CardContext): HTMLElement {
       )
     : h('p', { class: 'desc muted' }, `${c.label}。まだあまり知られていない場所かもしれません。行ってみて確かめよう！`);
 
-  const wantBtn = h('button', { type: 'button', class: 'act', 'aria-pressed': String(history.has('want', s.id)) }, '⭐ 行ってみたい');
-  const wentBtn = h('button', { type: 'button', class: 'act', 'aria-pressed': String(history.has('went', s.id)) }, '✅ 行った');
-  wantBtn.addEventListener('click', () => {
-    wantBtn.setAttribute('aria-pressed', String(history.toggle('want', s)));
-    ctx.onChange();
-  });
-  wentBtn.addEventListener('click', () => {
-    wentBtn.setAttribute('aria-pressed', String(history.toggle('went', s)));
-    ctx.onChange();
-  });
   const replaceBtn = h('button', { type: 'button', class: 'act subtle' }, '🔄 ほかの場所');
   replaceBtn.addEventListener('click', ctx.onReplace);
 
@@ -140,7 +128,7 @@ export function renderCard(s: Spot, ctx: CardContext): HTMLElement {
         ),
         safeUrl(s.web) ? h('a', { href: safeUrl(s.web), target: '_blank', rel: 'noopener' }, '🔗 公式サイト') : null,
       ),
-      h('div', { class: 'actions' }, wantBtn, wentBtn, replaceBtn),
+      h('div', { class: 'actions' }, replaceBtn),
     ),
   );
   media.addEventListener('click', ctx.onFocus);
