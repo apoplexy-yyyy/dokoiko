@@ -95,7 +95,10 @@ export class DiscoverMap {
         title: s.name,
         riseOnHover: true,
       });
+      // 「川崎市〇〇こども文化センター」などは市名を省いて短く
+      m.bindTooltip(s.name.replace(/^(横浜|川崎|相模原|横須賀|藤沢|平塚)市(立)?/, ''), { permanent: true, direction: 'right', offset: [14, -24], className: 'pin-label', interactive: true });
       m.on('click', () => onSelect(s.id));
+      m.getTooltip()?.on('click', () => onSelect(s.id));
       m.addTo(this.pickLayer);
       this.pickMarkers.set(s.id, m);
     });
@@ -122,7 +125,17 @@ export class DiscoverMap {
         title: evs.map((e) => e.title).join(' / '),
         riseOnHover: true,
       });
+      // 会場名（なければイベント名）を添える。長いものは短く
+      const label = evs[0].spotName ?? evs[0].venue ?? evs[0].title;
+      m.bindTooltip(label.length > 14 ? label.slice(0, 14) + '…' : label, {
+        permanent: true,
+        direction: 'right',
+        offset: [12, 0],
+        className: 'pin-label event-label',
+        interactive: true,
+      });
       m.on('click', () => onSelect(evs[0].id));
+      m.getTooltip()?.on('click', () => onSelect(evs[0].id));
       m.addTo(this.eventLayer);
       for (const e of evs) this.eventMarkers.set(e.id, m);
     }
