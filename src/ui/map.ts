@@ -195,7 +195,7 @@ export class DiscoverMap {
   private declutter() {
     const t0 = performance.now();
     this.declutterInner();
-    if (perf.on) console.log(`[perf] ラベルの重なり判定 ${(performance.now() - t0).toFixed(1)}ms`);
+    perf.note("ラベル", performance.now() - t0);
   }
 
   private declutterInner() {
