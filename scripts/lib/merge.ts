@@ -65,7 +65,7 @@ export function findSame(spots: Spot[], lat: number, lon: number, name: string, 
 }
 
 /** 県の児童館データ：既存の児童館に開館時間・対象年齢・URLを足し、無ければ追加する */
-export function mergePrefKids(spots: Spot[], kids: PrefKids[], near: Near): number {
+export function mergePrefKids(spots: Spot[], kids: PrefKids[], near: Near, src = '神奈川県'): number {
   let added = 0;
   for (const k of kids) {
     const hours = [k.hours, k.closed].filter(Boolean).join('（') + (k.hours && k.closed ? '）' : '');
@@ -81,7 +81,7 @@ export function mergePrefKids(spots: Spot[], kids: PrefKids[], near: Near): numb
     if (!n) continue;
     if (hours) n.hours = hours.slice(0, 120);
     if (k.ages.length) n.ages = k.ages;
-    n.src = '神奈川県';
+    n.src = src;
     spots.push(n);
     added++;
   }

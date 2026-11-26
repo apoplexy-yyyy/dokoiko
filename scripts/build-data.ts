@@ -23,7 +23,7 @@ import { applyVisitors, gbifSpots, mergeOverture, mergePrefKids, mergeWikidata }
 import type { WdSpot } from './collect-wikidata.ts';
 import { SUSPECT_FACTOR, deadLink, manualClosure, osmClosure, pastClosure, webClosure, wikidataClosure, wikipediaClosure, type Closure, type WebCheck } from './lib/closed.ts';
 import { loadCityOf } from './lib/cities.ts';
-import { manualWrong, type Famous, type Place } from './lib/fake.ts';
+import { manualWrong, type Famous, type ManualWrong, type Place } from './lib/fake.ts';
 import { normName } from './lib/name.ts';
 
 const OUT = join('public', 'data', region.id);
@@ -98,6 +98,7 @@ export async function buildData() {
   const famous = await readWork<Famous[]>('wd-famous.json', []);
   const extra = {
     prefKids: mergePrefKids(spots, await readWork<PrefKids[]>('pref-kids.json', []), near),
+    cityKids: mergePrefKids(spots, await readWork<PrefKids[]>('city-kids.json', []), near, '横浜市'),
     overture: mergeOverture(spots, await readWork<OvertureSpot[]>('overture.json', []), near, famous, fakes, await readWork<[number, number][]>('coast.json', []), await readWork<Place[]>('places.json', [])),
     gbif: 0,
     wikidata: 0,
@@ -117,12 +118,21 @@ export async function buildData() {
 
   // 閉館を確認したが元のデータに反映されていない施設（config/closed.json）・実在しない場所（config/wrong.json）
   const wrongs: string[] = [];
+  const cityOf = await loadCityOf();
   for (let i = spots.length - 1; i >= 0; i--) {
     const c = manualClosure(spots[i], manualClosed.closed);
     if (c) removed.push(...spots.splice(i, 1).map((x) => `${x.name}（${c.why}）`));
     else {
-      const w = manualWrong(spots[i], manualWrongList.wrong);
-      if (w) wrongs.push(...spots.splice(i, 1).map((x) => `${x.name}（${x.city ?? ''}。${w.reason}）`));
+      const w = manualWrong(spots[i], manualWrongList.wrong as ManualWrong[]);
+      if (w?.lat !== undefined && w.lon !== undefined) {
+        // 位置（と名前）を直す
+        const x = spots[i];
+        wrongs.push(`${x.name}（${x.city ?? ''} → 位置を直した。${w.reason}）`);
+        x.lat = w.lat;
+        x.lon = w.lon;
+        x.city = cityOf(w.lat, w.lon) ?? x.city;
+        if (w.name_to) x.name = w.name_to;
+      } else if (w) wrongs.push(...spots.splice(i, 1).map((x) => `${x.name}（${x.city ?? ''}。${w.reason}）`));
     }
   }
 
@@ -218,6 +228,7 @@ export async function buildData() {
       { name: 'Overture Maps', license: 'CDLA Permissive 2.0（Foursquare 由来は Apache 2.0）', url: 'https://overturemaps.org/' },
       { name: 'GBIF.org 生きもの観察記録', license: 'CC0・CC BY 4.0', url: 'https://www.gbif.org/' },
       { name: '神奈川県オープンデータ（児童館等・入込観光客調査）', license: 'CC BY 4.0', url: 'https://catalog.opendata.pref.kanagawa.jp/' },
+      { name: '横浜市オープンデータ（親と子のつどいの広場）', license: 'CC BY', url: 'https://data.city.yokohama.lg.jp/dataset/kodomo_tsudoinohiroba' },
       ...feeds.feeds.map((f) => ({ name: f.name + ' 新着情報', license: '各サイトの利用規約', url: new URL(f.url).origin })),
     ],
   };

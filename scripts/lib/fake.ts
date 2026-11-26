@@ -114,6 +114,11 @@ export function misplacedPlace(name: string, lat: number, lon: number, places: P
 export interface ManualWrong {
   name?: string;
   id?: string;
+  /** 正しい位置（書いた場合は消さずに直す） */
+  lat?: number;
+  lon?: number;
+  /** 正しい名前 */
+  name_to?: string;
   reason: string;
 }
 

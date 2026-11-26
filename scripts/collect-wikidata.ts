@@ -21,6 +21,9 @@ export const WD_TYPES: Record<string, Record<string, string>> = {
   Q832778: { tourism: 'camp_site' }, // キャンプ場
   Q1440300: { 'tower:type': 'observation' }, // 展望台
   Q39816: { natural: 'cave_entrance' }, // 洞窟
+  Q39715: { man_made: 'lighthouse' }, // 灯台
+  Q62832: { man_made: 'observatory' }, // 観測所（天文台など。名前で絞る）
+  Q131596: { shop: 'farm' }, // 農場（観光農園・牧場）
 };
 
 export interface WdSpot {

@@ -180,11 +180,40 @@ async function collectVisitors(): Promise<PrefVisitors[]> {
   return out;
 }
 
+/** 横浜市「親と子のつどいの広場」（乳幼児と保護者が遊べる場所。CC BY） */
+const TSUDOI_PAGE = 'https://www.city.yokohama.lg.jp/kosodate-kyoiku/kosodateshien/asobiba/tsudoi/tsudoinohiroba.html';
+const TSUDOI_CSV = 'https://www.city.yokohama.lg.jp/kosodate-kyoiku/kosodateshien/asobiba/tsudoi/tsudoinohiroba.files/0029_20251218.csv';
+
+async function collectYokohamaTsudoi(cityOf: (lat: number, lon: number) => string | undefined): Promise<PrefKids[]> {
+  const rows = parseCsv(await fetchText(TSUDOI_CSV, { ttlHours: 24 * 6 }));
+  const head = rows[0];
+  const col = (name: string) => head.findIndex((h) => h.startsWith(name));
+  const C = { name: col('名称'), lat: col('緯度'), lon: col('経度') };
+  const out: PrefKids[] = [];
+  rows.slice(1).forEach((r, i) => {
+    const lat = Number(r[C.lat]);
+    const lon = Number(r[C.lon]);
+    const name = r[C.name]?.trim();
+    if (!name || !lat || !lon) return;
+    const city = cityOf(lat, lon);
+    if (!city) return;
+    out.push({ id: `yt${i}`, name, lat: +lat.toFixed(5), lon: +lon.toFixed(5), city, web: TSUDOI_PAGE, ages: ['乳幼児'] });
+  });
+  return out;
+}
+
 export async function collectPref() {
   const cityOf = await loadCityOf();
   const kids = await collectKids(cityOf);
   await writeWork('pref-kids.json', kids);
   console.log(`[pref] 児童館等 ${kids.length} 件`);
+  try {
+    const tsudoi = await collectYokohamaTsudoi(cityOf);
+    await writeWork('city-kids.json', tsudoi);
+    console.log(`[pref] 横浜市 親と子のつどいの広場 ${tsudoi.length} 件`);
+  } catch (e) {
+    console.warn(`[pref] 横浜市 親と子のつどいの広場 失敗（スキップ）: ${(e as Error).message}`);
+  }
   const visitors = await collectVisitors();
   await writeWork('pref-visitors.json', visitors);
   console.log(`[pref] 入込観光客（主要施設） ${visitors.length} 件`);

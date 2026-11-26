@@ -77,6 +77,7 @@ function obsList(s: Spot) {
 const SRC: Record<string, string> = {
   Overture: '施設情報：Overture Maps（CDLA Permissive 2.0 ほか）',
   神奈川県: '施設情報：神奈川県オープンデータ（CC BY 4.0）',
+  横浜市: '施設情報：横浜市オープンデータ（CC BY）',
   Wikidata: '施設情報：Wikidata（CC0）',
 };
 

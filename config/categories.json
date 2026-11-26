@@ -58,13 +58,19 @@
     { "key": "historic", "value": "aircraft", "cat": "history", "base": 0.7 },
     { "key": "historic", "value": "ship", "cat": "history", "base": 0.7 },
     { "key": "shop", "value": "farm", "cat": "farm", "base": 0.6 },
-    { "key": "landuse", "value": "orchard", "cat": "farm", "base": 0.7, "nameMatch": "観光|もぎ|狩り|農園|体験" }
+    { "key": "landuse", "value": "orchard", "cat": "farm", "base": 0.7, "nameMatch": "観光|もぎ|狩り|農園|体験" },
+    { "key": "garden:type", "value": "botanical", "cat": "nature", "base": 0.75 },
+    { "key": "information", "value": "visitor_centre", "cat": "nature", "base": 0.55, "indoor": true },
+    { "key": "amenity", "value": "arts_centre", "cat": "museum", "base": 0.5, "indoor": true },
+    { "key": "man_made", "value": "observatory", "cat": "museum", "base": 0.6, "nameMatch": "天文|星|宇宙|プラネタリウム" },
+    { "key": "railway", "value": "miniature", "cat": "play", "base": 0.8 },
+    { "key": "leisure", "value": "track", "cat": "play", "base": 0.6, "nameMatch": "カート|ゴーカート|ミニSL|ミニ鉄道|鉄道" }
   ],
   "minNameLength": 2,
   "excludeNamePattern": "大学|体育会|馬術部|キャンパス|霊園|墓地|墓苑|駐車場|社宅|寮$|サバイバルゲーム|ゴルフ|射撃|パチンコ|ホテル|旅館|駅前広場|駅前ロータリー|^フリーサイト|^オートサイト|^サイト[0-9A-Za-z]",
   "excludeNameByCategory": {
-    "library": "大学|附属|学園|高校|高等学校|中学校|小学校|研究所|専門",
-    "museum": "大学|研究所|専門店|店$|販売|ショップ",
+    "library": "大学|附属|学園|高校|高等学校|中学校|小学校|研究所|専門|点字|法律|議会|病院|患者",
+    "museum": "大学|研究所|専門店|店$|販売|ショップ|刺青|タトゥー|彫よし|秘宝館|拷問|クラブ|振興|教室|スクール|事務所",
     "water": "学校|高校|大学|中学|会員|ジム|競泳|飛込|用プール|スクール|教室|クラブ",
     "kids": "前$|入口|図書室|保育|クリニック|駐車|駐輪|児童遊園|学童|放課後|病児"
   },

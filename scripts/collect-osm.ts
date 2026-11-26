@@ -49,8 +49,11 @@ export interface OsmWork {
   toilets: [number, number][];
 }
 
-/** categories.json のルールから Overpass のフィルタ文を生成 */
-export function buildFilters(area: string): string {
+/** 1回の問い合わせに入れる条件の数（大きいとサーバーが時間切れになる） */
+const FILTERS_PER_QUERY = 6;
+
+/** categories.json のルールから Overpass のフィルタ文（1行1条件）を生成 */
+export function buildFilters(area: string): string[] {
   // 名前の条件があるルール（building=yes など数が多いタグ）は、名前でしぼって取得する
   const byKey = new Map<string, Set<string>>();
   const byName = new Map<string, Set<string>>();
@@ -65,7 +68,7 @@ export function buildFilters(area: string): string {
       const [k, nm] = kn.split('\t');
       return `nwr(area.${area})["${k}"~"^(${[...vs].join('|')})$"]["name"~"${nm}"];`;
     }),
-  ].join('\n  ');
+  ];
 }
 
 export async function overpass(query: string, minElements = 1): Promise<OsmElement[]> {
@@ -167,12 +170,25 @@ export async function collectOsm(): Promise<OsmWork> {
   };
 
   console.log('[osm] スポット取得中…');
-  const els = await overpass(`[out:json][timeout:300];
+  // 条件を数行ずつに分けて取得し、まとめる
+  const filters = buildFilters('pref');
+  const byId = new Map<string, OsmElement>();
+  for (let i = 0; i < filters.length; i += FILTERS_PER_QUERY) {
+    const part = filters.slice(i, i + FILTERS_PER_QUERY);
+    const got = await overpass(
+      `[out:json][timeout:300];
 ${pref}
 (
-  ${buildFilters('pref')}
+  ${part.join('\n  ')}
 );
-out tags bb qt;`);
+out tags bb qt;`,
+      0,
+    );
+    for (const e of got) byId.set(e.type + e.id, e);
+    console.log(`[osm]   ${Math.min(i + FILTERS_PER_QUERY, filters.length)}/${filters.length} 条件 → 累計 ${byId.size} 件`);
+  }
+  const els = [...byId.values()];
+  if (els.length < 1000) throw new Error(`Overpass: スポットが少なすぎます（${els.length} 件）`);
   const spots: RawSpot[] = [];
   for (const e of els) {
     const c = coord(e);
