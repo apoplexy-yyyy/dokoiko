@@ -331,6 +331,9 @@ select { flex: 1; min-width: 0; }
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 30%, transparent), 0 3px 8px rgb(0 0 0 / 0.35);
 }
 .leaflet-tooltip.pin-label:not(.other-label):not(.event-label) { font-size: 13px; }
+/* 拡大・縮小の間は影と名前ラベルを省く（描き直しを軽くする） */
+.zooming .leaflet-tooltip-pane { visibility: hidden; }
+.zooming .spot-pin span, .zooming .event-pin span { box-shadow: none; }
 .event-pin.approx span { border-style: dashed; }
 
 /* 吹き出し */

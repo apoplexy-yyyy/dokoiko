@@ -33,6 +33,8 @@ export class DiscoverMap {
   private pickMarkers = new Map<string, L.Marker>();
   private otherLayer = L.layerGroup();
   private otherMarkers: L.Marker[] = [];
+  /** 表示中の場所のピン（キー：ID・おすすめか・大きさ）。次に表示するときに使い回す */
+  private spotMarkers = new Map<string, L.Marker>();
   private timer = 0;
   private baseLayer?: L.TileLayer;
   base = 'osm';
@@ -92,7 +94,12 @@ export class DiscoverMap {
       notify();
       this.declutterSoon();
     }).observe(el);
-    this.map.on('zoomend', () => this.declutterSoon());
+    // 拡大・縮小の間は影と名前ラベルを省いて描き直しを軽くする（スマホで重いため）。止まったら戻す
+    this.map.on('zoomstart', () => el.classList.add('zooming'));
+    this.map.on('zoomend', () => {
+      el.classList.remove('zooming');
+      this.declutterSoon();
+    });
   }
 
   /**
@@ -173,30 +180,41 @@ export class DiscoverMap {
     const hit = (a: DOMRect, b: DOMRect) =>
       a.left < b.right + pad && b.left < a.right + pad && a.top < b.bottom + pad && b.top < a.bottom + pad;
     const markers = [...new Set([...this.pickMarkers.values(), ...this.eventMarkers.values(), ...this.otherMarkers])];
-    const icons = markers.map((m) => ({ m, r: m.getElement()?.querySelector('span')?.getBoundingClientRect() }));
     const picks = new Set(this.pickMarkers.values());
-    const placed: DOMRect[] = [];
-    for (const m of markers) {
-      const el = m.getTooltip()?.getElement();
+    // 位置を測る・書き換えるを交互にすると、そのたびにページ全体の配置を計算し直して重い（スマホで顕著）。
+    // ① 前回の書き換えを全部戻す → ② まとめて測る → ③ 計算 → ④ まとめて書き換える、の順にする
+    const labels = markers.map((m) => ({ m, el: m.getTooltip()?.getElement() }));
+    for (const { el } of labels) {
       if (!el) continue;
       el.style.visibility = '';
       el.style.marginLeft = '';
+    }
+    const icons = markers.map((m) => ({ m, r: m.getElement()?.querySelector('span')?.getBoundingClientRect() }));
+    const rects = labels.map(({ el }) => el?.getBoundingClientRect());
+    const placed: DOMRect[] = [];
+    const result: { el: HTMLElement; dx: number; show: boolean }[] = [];
+    labels.forEach(({ m, el }, i) => {
+      const r0 = rects[i];
+      if (!el || !r0) return;
       // 候補のラベルは候補のピンだけを避ける（イベントのピンの上には重なってよい）
-      const obstacles = picks.has(m) ? icons.filter((i) => picks.has(i.m)) : icons;
+      const obstacles = picks.has(m) ? icons.filter((x) => picks.has(x.m)) : icons;
       const free = (r: DOMRect) =>
-        !placed.some((p) => hit(r, p)) && !obstacles.some((i) => i.m !== m && i.r && i.r.width > 0 && hit(r, i.r));
-      let r = el.getBoundingClientRect();
-      if (!free(r)) {
-        // 右がふさがっていたら、ピンの左側に出してみる
-        const dx = (L.point(m.getTooltip()!.options.offset ?? [0, 0]).x || 0) * 2 + r.width + 10;
-        el.style.marginLeft = `-${dx}px`;
-        r = el.getBoundingClientRect();
+        !placed.some((p) => hit(r, p)) && !obstacles.some((x) => x.m !== m && x.r && x.r.width > 0 && hit(r, x.r));
+      if (free(r0)) {
+        placed.push(r0);
+        return;
       }
-      if (free(r)) placed.push(r);
-      else {
-        el.style.marginLeft = '';
-        el.style.visibility = 'hidden';
-      }
+      // 右がふさがっていたら、ピンの左側に出してみる（左へ dx ずらした位置を計算で求める）
+      const dx = (L.point(m.getTooltip()!.options.offset ?? [0, 0]).x || 0) * 2 + r0.width + 10;
+      const r1 = new DOMRect(r0.x - dx, r0.y, r0.width, r0.height);
+      if (free(r1)) {
+        placed.push(r1);
+        result.push({ el, dx, show: true });
+      } else result.push({ el, dx: 0, show: false });
+    });
+    for (const { el, dx, show } of result) {
+      if (show) el.style.marginLeft = `-${dx}px`;
+      else el.style.visibility = 'hidden';
     }
   }
 
@@ -243,8 +261,9 @@ export class DiscoverMap {
    * @returns 表示した数
    */
   showSpots(list: RankedSpot[], popup: (s: Spot) => HTMLElement): number {
-    this.pickLayer.clearLayers();
-    this.otherLayer.clearLayers();
+    // 地図を少し動かしただけなら大半のピンは前と同じなので、作り直さずに使い回す（変わった分だけ足し引きする）
+    const prev = this.spotMarkers;
+    this.spotMarkers = new Map();
     this.pickMarkers.clear();
     this.otherMarkers = [];
     const size = this.map.getSize();
@@ -257,7 +276,8 @@ export class DiscoverMap {
     for (const x of list.slice(0, 800)) {
       const { s } = x;
       const score = Math.sqrt(x.w / wmax); // 0〜1
-      const px = Math.round(x.pick ? Math.max(40, 30 + 16 * score) : 20 + 18 * score);
+      // 大きさは 2px 刻み（1px の違いで作り直さないように）
+      const px = 2 * Math.round((x.pick ? Math.max(40, 30 + 16 * score) : 20 + 18 * score) / 2);
       const r = px / 2;
       const pt = this.map.latLngToContainerPoint([s.lat, s.lon]);
       if (!x.pick) {
@@ -265,32 +285,47 @@ export class DiscoverMap {
         if (taken.some((t) => t.pt.distanceTo(pt) < (t.r + r) * 0.9)) continue;
       }
       taken.push({ pt, r });
-      const c = CAT[s.cat] ?? CAT.other;
-      const m = L.marker([s.lat, s.lon], {
-        icon: L.divIcon({
-          className: `spot-pin${x.pick ? ' pick' : ''}`,
-          html: `<span style="--c:${c.color};--s:${px}px;opacity:${(0.7 + 0.3 * score).toFixed(2)}">${c.icon}</span>`,
-          iconSize: [px, px],
-          iconAnchor: [r, r],
-        }),
-        title: s.name,
-        riseOnHover: true,
-        zIndexOffset: Math.round(score * 1000) + (x.pick ? 2000 : 0),
-      });
-      m.bindTooltip(shortName(s.name), {
-        permanent: true,
-        direction: 'right',
-        offset: [r + 2, 0],
-        className: `pin-label${x.pick ? '' : ' other-label'}`,
-        interactive: true,
-      });
-      m.bindPopup(() => popup(s), { maxWidth: 340, minWidth: 260, autoPan: false, className: 'card-popup' });
-      m.getTooltip()?.on('click', () => m.openPopup());
-      m.addTo(x.pick ? this.pickLayer : this.otherLayer);
+      const opacity = (0.7 + 0.3 * score).toFixed(2);
+      const zIndex = Math.round(score * 1000) + (x.pick ? 2000 : 0);
+      const key = `${s.id}|${x.pick ? 1 : 0}|${px}`;
+      let m = prev.get(key);
+      if (m) {
+        prev.delete(key);
+        m.setZIndexOffset(zIndex);
+        const span = m.getElement()?.querySelector('span');
+        if (span) span.style.opacity = opacity;
+      } else {
+        const c = CAT[s.cat] ?? CAT.other;
+        const mk = L.marker([s.lat, s.lon], {
+          icon: L.divIcon({
+            className: `spot-pin${x.pick ? ' pick' : ''}`,
+            html: `<span style="--c:${c.color};--s:${px}px;opacity:${opacity}">${c.icon}</span>`,
+            iconSize: [px, px],
+            iconAnchor: [r, r],
+          }),
+          title: s.name,
+          riseOnHover: true,
+          zIndexOffset: zIndex,
+        });
+        mk.bindTooltip(shortName(s.name), {
+          permanent: true,
+          direction: 'right',
+          offset: [r + 2, 0],
+          className: `pin-label${x.pick ? '' : ' other-label'}`,
+          interactive: true,
+        });
+        mk.bindPopup(() => popup(s), { maxWidth: 340, minWidth: 260, autoPan: false, className: 'card-popup' });
+        mk.getTooltip()?.on('click', () => mk.openPopup());
+        mk.addTo(x.pick ? this.pickLayer : this.otherLayer);
+        m = mk;
+      }
+      this.spotMarkers.set(key, m);
       if (x.pick) this.pickMarkers.set(s.id, m);
       else this.otherMarkers.push(m);
       shown++;
     }
+    // 今回出さなかったピンを外す
+    for (const m of prev.values()) m.remove();
     this.declutterSoon();
     return shown;
   }
