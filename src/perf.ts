@@ -87,6 +87,9 @@ export const perf = {
       return `${n} ${d.toFixed(1)}`;
     });
     push(`計 ${(prev - start).toFixed(1)}｜${parts.join('｜')}${extra ? `｜${extra}` : ''}`);
+    // 処理のあと、ブラウザが画面を描き終えるまで（配置の計算・描画）。次の次のフレームまでの時間で測る
+    const t0 = performance.now();
+    requestAnimationFrame(() => requestAnimationFrame(() => push(`描画 ${(performance.now() - t0).toFixed(1)}`)));
   },
   /** 単独の処理時間を記録する */
   note(name: string, ms: number) {

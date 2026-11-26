@@ -22,7 +22,7 @@ function pinHtml(icon: HTMLElement, label: string, cls: string): HTMLElement {
 }
 
 /** 今の大きさ・濃さ・重なり順を覚えておくピン（変わったときだけ書き換える） */
-type PinMarker = L.Marker & { pin: { px: number; op: string; z: number } };
+type PinMarker = L.Marker & { pin: { px: number; op: string; z: number; span?: HTMLElement | null } };
 
 export interface RankedSpot {
   s: Spot;
@@ -52,6 +52,8 @@ export class DiscoverMap {
   private otherMarkers: L.Marker[] = [];
   /** 直近の showSpots で新しく作ったピンの数（計測用） */
   created = 0;
+  /** 直近の showSpots の内訳（計測用。?perf のときだけ） */
+  pinStats = '';
   /** 表示中の場所のピン（キー：ID・おすすめか）。次に表示するときに使い回す */
   private spotMarkers = new Map<string, L.Marker>();
   /** 表示中のイベントのピン（キー：会場・イベント） */
@@ -286,6 +288,9 @@ export class DiscoverMap {
     const prev = this.spotMarkers;
     this.spotMarkers = new Map();
     this.created = 0;
+    const T = { place: 0, reuse: 0, create: 0, remove: 0 };
+    const now = perf.on ? () => performance.now() : () => 0;
+    let t = now();
     this.pickMarkers.clear();
     this.otherMarkers = [];
     const size = this.map.getSize();
@@ -306,6 +311,8 @@ export class DiscoverMap {
         if (taken.some((t) => t.pt.distanceTo(pt) < (t.r + r) * 0.9)) continue;
       }
       taken.push({ pt, r });
+      const t1 = now();
+      T.place += t1 - t;
       const opacity = (0.7 + 0.3 * score).toFixed(2);
       const zIndex = Math.round(score * 1000) + (x.pick ? 2000 : 0);
       // 大きさ・濃さが変わっても作り直さず、その場で直す（地図を動かすと一番高い得点が変わり、ほぼ全部の大きさが変わるため）
@@ -315,14 +322,17 @@ export class DiscoverMap {
         prev.delete(key);
         if (m.pin.z !== zIndex) m.setZIndexOffset(zIndex);
         const el = m.getElement();
-        const span = el?.querySelector('span');
+        const span = (m.pin.span ??= el?.querySelector('span'));
         if (el && span && m.pin.px !== px) {
           el.style.width = el.style.height = `${px}px`;
           el.style.marginLeft = el.style.marginTop = `${-r}px`;
           span.style.setProperty('--s', `${px}px`);
         }
         if (span && m.pin.op !== opacity) span.style.opacity = opacity;
-        m.pin = { px, op: opacity, z: zIndex };
+        m.pin.px = px;
+        m.pin.op = opacity;
+        m.pin.z = zIndex;
+        T.reuse += now() - t1;
       } else {
         const c = CAT[s.cat] ?? CAT.other;
         const mk = L.marker([s.lat, s.lon], {
@@ -341,14 +351,21 @@ export class DiscoverMap {
         mk.addTo(x.pick ? this.pickLayer : this.otherLayer);
         m = mk;
         this.created++;
+        T.create += now() - t1;
       }
       this.spotMarkers.set(key, m);
       if (x.pick) this.pickMarkers.set(s.id, m);
       else this.otherMarkers.push(m);
       shown++;
+      t = now();
     }
+    T.place += now() - t;
     // 今回出さなかったピンを外す
+    t = now();
     for (const m of prev.values()) m.remove();
+    T.remove = now() - t;
+    if (perf.on)
+      this.pinStats = `配置 ${T.place.toFixed(1)}・使い回し ${T.reuse.toFixed(1)}・新規 ${T.create.toFixed(1)}・外す ${T.remove.toFixed(1)}（${prev.size}）`;
     this.declutterSoon();
     return shown;
   }

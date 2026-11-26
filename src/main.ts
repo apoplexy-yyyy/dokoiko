@@ -118,7 +118,8 @@ async function refresh() {
   perf.mark('ピン');
   history.addMany('seen', picks);
   perf.mark('履歴');
-  perf.end(`候補 ${spots.length}・ピン ${shown}（新規 ${map.created}）`);
+  perf.end(`候補 ${spots.length}・ピン ${shown}（新規 ${map.created}）
+  ピンの内訳 ${map.pinStats}`);
   if (!wide) prefetchAround(state.meta, b);
 
 }
