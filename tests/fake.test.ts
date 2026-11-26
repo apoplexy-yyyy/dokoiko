@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { COAST_KM, coastDistKm, fameKey, misplacedFamous, type Famous } from '../scripts/lib/fake';
+import { COAST_KM, coastDistKm, fameKey, manualWrong, misplacedFamous, misplacedPlace, type Famous } from '../scripts/lib/fake';
 
 const famous: Famous[] = [
   { q: 'Q1', name: '東京ディズニーランド', lat: 35.6328, lon: 139.8806, sitelinks: 40 },
@@ -49,5 +49,28 @@ describe('海から遠い砂浜', () => {
   });
   it('海岸線のデータが無ければ判定しない', () => {
     expect(coastDistKm(35.42, 139.6, [])).toBe(0);
+  });
+});
+
+describe('名前の地名と場所が合わない砂浜', () => {
+  const places = [
+    { name: '津久井一丁目', lat: 35.196, lon: 139.665 },
+    { name: '長浜', lat: 35.3, lon: 139.2 },
+  ];
+  it('「地名＋浜」で地名が遠くにしか無ければ見つける', () => {
+    expect(misplacedPlace('津久井浜', 35.327, 139.62, places)).toBe('津久井');
+    expect(misplacedPlace('津久井浜', 35.197, 139.666, places)).toBeUndefined();
+  });
+  it('短い地名では判定しない', () => {
+    expect(misplacedPlace('長浜海岸', 35.2, 139.6, places)).toBeUndefined();
+  });
+});
+
+describe('手で登録した実在しない場所', () => {
+  it('名前か ID で見つける', () => {
+    const list = [{ name: '荒崎海岸なんやの浜', reason: 'x' }, { id: 'o1', reason: 'y' }];
+    expect(manualWrong({ id: 'o9', name: '荒崎海岸なんやの浜' }, list)?.reason).toBe('x');
+    expect(manualWrong({ id: 'o1', name: '別' }, list)?.reason).toBe('y');
+    expect(manualWrong({ id: 'o2', name: '荒崎公園' }, list)).toBeUndefined();
   });
 });

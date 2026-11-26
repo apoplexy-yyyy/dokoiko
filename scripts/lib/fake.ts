@@ -81,3 +81,44 @@ export function coastDistKm(lat: number, lon: number, coast: [number, number][])
   }
   return min;
 }
+
+export interface Place {
+  name: string;
+  lat: number;
+  lon: number;
+}
+
+/** 地名からの距離の目安（km）。名前に入った地名がこれより遠くにしか無ければ場所が違うとみなす */
+export const PLACE_KM = 5;
+
+/** 「津久井一丁目」→「津久井」。照合に使う地名の元の形 */
+export const placeBase = (n: string) => n.normalize('NFKC').replace(/[0-9一二三四五六七八九十]+丁目$|[0-9]+$/, '').replace(/\s/g, '');
+
+/**
+ * 「地名＋浜・海岸」という名前の砂浜で、その地名が近く（PLACE_KM 以内）に無い → その地名を返す。
+ * 「津久井浜」が横浜市金沢区にある（津久井は横須賀市）など。
+ * 「長浜」「湘南」のような短い地名・広い地域名は、地名のデータに載っていない場所にも使われるので見ない（3文字以上）
+ */
+export function misplacedPlace(name: string, lat: number, lon: number, places: Place[]): string | undefined {
+  const core = name
+    .normalize('NFKC')
+    .replace(/\s/g, '')
+    .replace(/(海水浴場|海岸|ビーチ|浜)+$/, '');
+  if (core.length < 3) return undefined;
+  const same = places.filter((p) => placeBase(p.name) === core);
+  if (!same.length || same.some((p) => distKm(lat, lon, p.lat, p.lon) <= PLACE_KM)) return undefined;
+  return core;
+}
+
+/** 実在しない・場所が違うと確認した場所（config/wrong.json） */
+export interface ManualWrong {
+  name?: string;
+  id?: string;
+  reason: string;
+}
+
+/** 手で登録した「実在しない・場所が違う」場所か：同じ ID、または同じ名前 */
+export function manualWrong(s: { id: string; name: string; wd?: string }, list: ManualWrong[]): ManualWrong | undefined {
+  const key = normName(s.name);
+  return list.find((w) => (w.id && (w.id === s.id || w.id === s.wd)) || (w.name && normName(w.name) === key));
+}

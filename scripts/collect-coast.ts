@@ -24,8 +24,27 @@ out geom;`);
   return pts;
 }
 
+
+
+/**
+ * 地名（OSM の place=suburb・quarter・neighbourhood・village・hamlet・locality・island）を .work/places.json に保存する。
+ * 「津久井浜」が横浜市金沢区にあるような、名前に入った地名と場所が合わないものを見分けるのに使う
+ */
+export async function collectPlaces(): Promise<{ name: string; lat: number; lon: number }[]> {
+  const els = await overpass(`[out:json][timeout:180];
+area["ISO3166-2"="${region.iso}"]->.pref;
+node(area.pref)["place"~"^(suburb|quarter|neighbourhood|village|town|hamlet|locality|island|isolated_dwelling)$"]["name"];
+out;`);
+  const out = els
+    .filter((e) => e.tags?.name && e.lat !== undefined && e.lon !== undefined)
+    .map((e) => ({ name: e.tags!['name:ja'] ?? e.tags!.name, lat: +e.lat!.toFixed(5), lon: +e.lon!.toFixed(5) }));
+  await writeWork('places.json', out);
+  console.log(`[places] 地名 ${out.length} 件`);
+  return out;
+}
+
 if (isMain(import.meta.url))
-  collectCoast().catch((e) => {
+  Promise.all([collectCoast(), collectPlaces()]).catch((e) => {
     console.error(e);
     process.exit(1);
   });

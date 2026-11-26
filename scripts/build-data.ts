@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import region from '../config/region.json' with { type: 'json' };
 import feeds from '../config/feeds.json' with { type: 'json' };
 import manualClosed from '../config/closed.json' with { type: 'json' };
+import manualWrongList from '../config/wrong.json' with { type: 'json' };
 import { isMain, readWork, writeJson, writeWork } from './lib/work.ts';
 import { PointIndex, dedupe, matchNews, toSpot } from './lib/score.ts';
 import { computeIdf } from './lib/terms.ts';
@@ -22,7 +23,7 @@ import { applyVisitors, gbifSpots, mergeOverture, mergePrefKids, mergeWikidata }
 import type { WdSpot } from './collect-wikidata.ts';
 import { SUSPECT_FACTOR, deadLink, manualClosure, osmClosure, pastClosure, webClosure, wikidataClosure, wikipediaClosure, type Closure, type WebCheck } from './lib/closed.ts';
 import { loadCityOf } from './lib/cities.ts';
-import type { Famous } from './lib/fake.ts';
+import { manualWrong, type Famous, type Place } from './lib/fake.ts';
 import { normName } from './lib/name.ts';
 
 const OUT = join('public', 'data', region.id);
@@ -97,7 +98,7 @@ export async function buildData() {
   const famous = await readWork<Famous[]>('wd-famous.json', []);
   const extra = {
     prefKids: mergePrefKids(spots, await readWork<PrefKids[]>('pref-kids.json', []), near),
-    overture: mergeOverture(spots, await readWork<OvertureSpot[]>('overture.json', []), near, famous, fakes, await readWork<[number, number][]>('coast.json', [])),
+    overture: mergeOverture(spots, await readWork<OvertureSpot[]>('overture.json', []), near, famous, fakes, await readWork<[number, number][]>('coast.json', []), await readWork<Place[]>('places.json', [])),
     gbif: 0,
     wikidata: 0,
     visitors: applyVisitors(spots, await readWork<PrefVisitors[]>('pref-visitors.json', [])),
@@ -114,11 +115,18 @@ export async function buildData() {
   console.log('[build] 追加した情報源', extra);
   if (fakes.length) console.log(`[build] 実在しない・場所が違う場所を除外 ${fakes.length} 件:\n  ${fakes.join('\n  ')}`);
 
-  // 閉館を確認したが元のデータに反映されていない施設（config/closed.json）
+  // 閉館を確認したが元のデータに反映されていない施設（config/closed.json）・実在しない場所（config/wrong.json）
+  const wrongs: string[] = [];
   for (let i = spots.length - 1; i >= 0; i--) {
     const c = manualClosure(spots[i], manualClosed.closed);
     if (c) removed.push(...spots.splice(i, 1).map((x) => `${x.name}（${c.why}）`));
+    else {
+      const w = manualWrong(spots[i], manualWrongList.wrong);
+      if (w) wrongs.push(...spots.splice(i, 1).map((x) => `${x.name}（${x.city ?? ''}。${w.reason}）`));
+    }
   }
+
+  if (wrongs.length) console.log(`[build] 手で登録した実在しない場所を除外 ${wrongs.length} 件`, wrongs);
 
   // 説明文が「〜にあった施設」と過去形のもの：自身の説明文なら消し、そうでなければ疑いにする
   for (let i = spots.length - 1; i >= 0; i--) {

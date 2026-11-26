@@ -1,6 +1,6 @@
 // OSM 以外の情報源（Overture・神奈川県・GBIF）を、OSM 由来のスポットに統合する
 import { distKm } from '../../src/discover/pick.ts';
-import { COAST_KM, coastDistKm, misplacedFamous, type Famous } from './fake.ts';
+import { COAST_KM, PLACE_KM, coastDistKm, misplacedFamous, misplacedPlace, type Famous, type Place } from './fake.ts';
 import { normName } from './name.ts';
 export { normName };
 import type { Spot } from '../../src/types.ts';
@@ -96,6 +96,7 @@ export function mergeOverture(
   famous: Famous[] = [],
   dropped: string[] = [],
   coast: [number, number][] = [],
+  places: Place[] = [],
 ): number {
   let added = 0;
   for (const o of ov) {
@@ -116,6 +117,12 @@ export function mergeOverture(
       const d = coastDistKm(o.lat, o.lon, coast);
       if (d > COAST_KM) {
         dropped.push(`${o.name}（${o.city}。海から ${d.toFixed(1)}km）`);
+        continue;
+      }
+      // 名前の地名が近くに無い（「津久井浜」が横浜市金沢区にあるなど）
+      const pl = misplacedPlace(o.name, o.lat, o.lon, places);
+      if (pl) {
+        dropped.push(`${o.name}（${o.city}。「${pl}」は ${PLACE_KM}km より遠く）`);
         continue;
       }
     }
