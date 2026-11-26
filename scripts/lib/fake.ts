@@ -1,0 +1,70 @@
+// 実在しない・場所が違う施設の判定（純粋関数。単体テスト対象）
+// Overture の Meta（Facebook のチェックイン場所）由来のデータには、「ディズニーランド」が川崎駅前にあるような、
+// 有名な施設の名前だけを借りた場所が混じる。全国の有名な施設（Wikidata）と名前を照らし、
+// 本物が遠くにしか無いものを見つける
+import { normName } from './name.ts';
+
+/** 全国の有名な施設（Wikidata） */
+export interface Famous {
+  q: string;
+  name: string;
+  lat: number;
+  lon: number;
+  /** Wikipedia などの言語版の数（知名度） */
+  sitelinks: number;
+}
+
+/** 本物がこれより遠くにしか無ければ「場所が違う」とみなす（km） */
+export const FAR_KM = 5;
+
+/** 名前の照合用：表記ゆれ（長音・之/の/ノ・ヶ/ケ）をそろえる */
+export function fameKey(s: string): string {
+  return normName(s)
+    .replace(/[ーｰ―‐&＆]/g, '')
+    .replace(/[之の]/g, 'ノ')
+    .replace(/[ヶヵ]/g, 'ケ');
+}
+
+function distKm(a: number, b: number, c: number, d: number): number {
+  const r = Math.PI / 180;
+  const x = (d - b) * r * Math.cos(((a + c) / 2) * r);
+  const y = (c - a) * r;
+  return Math.hypot(x, y) * 6371;
+}
+
+/**
+ * 名前が有名な施設と同じか：同じ表記、または頭に地名などが付いただけ（「東京」ディズニーランド、「鴨川」シーワールド）。
+ * 「こども動物園」のような一般的な名前で消さないよう、種類の部分（動物園など）を除いた固有の部分が短いものは除く
+ */
+function sameFamous(key: string, f: Famous): boolean {
+  const fk = fameKey(f.name);
+  // 「動物園」「水族館」などの種類の部分を除いた、固有の部分の長さ
+  const own = key.replace(GENERIC, '').length;
+  // 同じ表記なら、固有の部分が短くても（「金沢」動物園）知名度があれば同じとみなす
+  if (fk === key) return own >= 3 || (own >= 2 && f.sitelinks >= 3);
+  return own >= 4 && f.sitelinks >= 3 && fk.endsWith(key) && fk.length - key.length <= 4;
+}
+
+/** 施設の種類を表す名前の終わり（照合用の表記で） */
+const GENERIC = new RegExp(
+  '(' +
+    ['こども', '子ども', '子供', '動物園', '水族館', '植物園', '美術館', '博物館', '資料館', '記念館', '科学館', '植物館', '温室', '文学館', 'ミュージアム', 'アクアリウム', 'パーク', 'ランド', '遊園地', 'センター', '公園']
+      .map(fameKey)
+      .join('|') +
+    ')+$',
+);
+
+/**
+ * 有名な施設の名前なのに、本物が遠くにしか無い → その有名な施設を返す（消す理由）。
+ * 近くに同じ名前の施設があれば（支店・分館など）問題なし
+ */
+export function misplacedFamous(name: string, lat: number, lon: number, famous: Famous[]): Famous | undefined {
+  const key = fameKey(name);
+  let far: Famous | undefined;
+  for (const f of famous) {
+    if (!sameFamous(key, f)) continue;
+    if (distKm(lat, lon, f.lat, f.lon) <= FAR_KM) return undefined;
+    far ??= f;
+  }
+  return far;
+}

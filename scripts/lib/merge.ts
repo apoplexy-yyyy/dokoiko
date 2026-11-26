@@ -1,5 +1,8 @@
 // OSM 以外の情報源（Overture・神奈川県・GBIF）を、OSM 由来のスポットに統合する
 import { distKm } from '../../src/discover/pick.ts';
+import { misplacedFamous, type Famous } from './fake.ts';
+import { normName } from './name.ts';
+export { normName };
 import type { Spot } from '../../src/types.ts';
 import type { GbifObs } from '../collect-gbif.ts';
 import type { OvertureSpot } from '../collect-overture.ts';
@@ -9,16 +12,6 @@ import { wikidataClosure } from './closed.ts';
 import { PointIndex, toSpot } from './score.ts';
 
 type Near = { playgrounds: PointIndex; toilets: PointIndex };
-
-/** 名前の比較用：全角半角・空白・かっこ・「市立」などの接頭辞をそろえる */
-export function normName(s: string): string {
-  return s
-    .normalize('NFKC')
-    .replace(/[≪《].*?[≫》]|公式/g, '')
-    .replace(/[\s・･「」『』()（）［］[\]【】〈〉<>"'’`~〜-]/g, '')
-    .replace(/^(神奈川県立|県立|横浜市立|川崎市立|相模原市立|[^\s]{1,4}[市町村]立|(横浜|川崎|相模原|横須賀|藤沢|平塚|小田原|茅ヶ崎|鎌倉)市)/, '')
-    .toLowerCase();
-}
 
 const GENERIC =
   /(こども文化センター|子ども文化センター|こどもセンター|子どもセンター|子育て支援センター|児童センター|児童館|児童室|子どもの家|こどもの家|図書館|図書室|分館|美術館|博物館|資料館|記念館|科学館|水族館|動物園|植物園|ミュージアム|センター|キャンプ場|オートキャンプ場|農園|牧場|ファーム|直売所|海岸|海水浴場|ビーチ|の滝|滝|展望台|公園)$/;
@@ -96,13 +89,19 @@ export function mergePrefKids(spots: Spot[], kids: PrefKids[], near: Near): numb
 }
 
 /** Overture：OSM に無い施設だけを追加する（近くに同じ名前があれば URL だけ補う） */
-export function mergeOverture(spots: Spot[], ov: OvertureSpot[], near: Near): number {
+export function mergeOverture(spots: Spot[], ov: OvertureSpot[], near: Near, famous: Famous[] = [], dropped: string[] = []): number {
   let added = 0;
   for (const o of ov) {
     // Overture は座標が数百mずれることがあるので、少し広めに同じ名前を探す
     const s = findSame(spots, o.lat, o.lon, o.name, 0.8, o.city);
     if (s) {
       if (!s.web && o.web) s.web = o.web;
+      continue;
+    }
+    // 有名な施設の名前を借りた場所（本物は遠くにある）は入れない
+    const f = misplacedFamous(o.name, o.lat, o.lon, famous);
+    if (f) {
+      dropped.push(`${o.name}（${o.city}。本物の「${f.name}」は遠く）`);
       continue;
     }
     const n = toSpot({ id: o.id, lat: o.lat, lon: o.lon, city: o.city, tags: o.tags }, { website: o.web }, near);

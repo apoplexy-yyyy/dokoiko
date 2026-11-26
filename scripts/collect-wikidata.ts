@@ -4,6 +4,7 @@ import region from '../config/region.json' with { type: 'json' };
 import { fetchJson } from './lib/http.ts';
 import { isMain, writeWork } from './lib/work.ts';
 import { loadCityOf } from './lib/cities.ts';
+import type { Famous } from './lib/fake.ts';
 
 /** Wikidata の種類（P31 とその上位） → OSM の疑似タグ */
 export const WD_TYPES: Record<string, Record<string, string>> = {
@@ -94,8 +95,63 @@ export async function collectWikidata(): Promise<WdSpot[]> {
   return out;
 }
 
+/** 全国の有名な施設の種類（種類ごとに1回ずつ問い合わせる。まとめて上位の種類までたどると時間切れになる） */
+const FAMOUS_TYPES = [
+  'Q33506', // 博物館
+  'Q207694', // 美術館
+  'Q588140', // 科学館
+  'Q16735822', // 歴史博物館
+  'Q1970365', // 自然史博物館
+  'Q43501', // 動物園
+  'Q2281788', // 水族館
+  'Q194195', // 遊園地
+  'Q2416723', // テーマパーク
+  'Q740326', // ウォーターパーク
+  'Q167346', // 植物園
+  'Q148319', // プラネタリウム
+  'Q23397', // 湖
+  'Q317995', // せき止め湖（河口湖など）
+  'Q204324', // 火口湖
+  'Q131681', // 貯水池・ダム湖
+  'Q34038', // 滝
+];
+
+/**
+ * 全国の有名な施設（名前と位置）。Overture に混じる「有名な施設の名前を借りた場所」を見分けるのに使う
+ * 結果は .work/wd-famous.json
+ */
+export async function collectFamous(): Promise<Famous[]> {
+  const byQ = new Map<string, Famous>();
+  for (const t of FAMOUS_TYPES) {
+    const query = `SELECT ?item ?label ?coord ?sl WHERE {
+  ?item wdt:P31 wd:${t} ; wdt:P17 wd:Q17 ; wdt:P625 ?coord ; wikibase:sitelinks ?sl .
+  ?item rdfs:label ?label FILTER(lang(?label) = "ja")
+}`;
+    try {
+      const res = await fetchJson<SparqlRes>('https://query.wikidata.org/sparql?format=json&query=' + encodeURIComponent(query), {
+        headers: { Accept: 'application/sparql-results+json' },
+        ttlHours: 24 * 6,
+        timeoutMs: 90_000,
+        intervalMs: 1000,
+      });
+      for (const b of res.results.bindings) {
+        const q = b.item.value.split('/').pop()!;
+        const m = b.coord.value.match(/Point\(([-\d.]+) ([-\d.]+)\)/);
+        if (!m || byQ.has(q)) continue;
+        byQ.set(q, { q, name: b.label.value, lat: +(+m[2]).toFixed(5), lon: +(+m[1]).toFixed(5), sitelinks: Number(b.sl.value) });
+      }
+    } catch (e) {
+      console.warn(`[wikidata-famous] ${t} 失敗（スキップ）: ${(e as Error).message}`);
+    }
+  }
+  const out = [...byQ.values()];
+  await writeWork('wd-famous.json', out);
+  console.log(`[wikidata-famous] 全国の有名な施設 ${out.length} 件`);
+  return out;
+}
+
 if (isMain(import.meta.url))
-  collectWikidata().catch((e) => {
+  Promise.all([collectWikidata(), collectFamous()]).catch((e) => {
     console.error(e);
     process.exit(1);
   });

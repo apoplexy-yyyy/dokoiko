@@ -15,7 +15,7 @@ import { collectOverture } from './collect-overture.ts';
 import { collectPref } from './collect-pref.ts';
 import { collectGbif } from './collect-gbif.ts';
 import { collectEvents } from './collect-events.ts';
-import { collectWikidata } from './collect-wikidata.ts';
+import { collectFamous, collectWikidata } from './collect-wikidata.ts';
 import { checkWebsites } from './check-websites.ts';
 
 async function step(name: string, fn: () => Promise<unknown>, required = false) {
@@ -43,6 +43,7 @@ try {
   await step('神奈川県オープンデータ', collectPref);
   await step('生きもの観察（GBIF）', collectGbif);
   await step('Wikidata の県内施設', collectWikidata);
+  await step('Wikidata の全国の有名な施設', collectFamous);
   await step('統合・出力', buildData, true);
   await step('公式サイトの確認', checkWebsites);
   await step('統合・出力（公式サイトの確認を反映）', buildData, true);

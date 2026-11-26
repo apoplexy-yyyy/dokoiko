@@ -21,6 +21,7 @@ import { applyVisitors, gbifSpots, mergeOverture, mergePrefKids, mergeWikidata }
 import type { WdSpot } from './collect-wikidata.ts';
 import { SUSPECT_FACTOR, deadLink, osmClosure, webClosure, wikidataClosure, wikipediaClosure, type Closure, type WebCheck } from './lib/closed.ts';
 import { loadCityOf } from './lib/cities.ts';
+import type { Famous } from './lib/fake.ts';
 
 const OUT = join('public', 'data', region.id);
 
@@ -87,9 +88,11 @@ export async function buildData() {
   const spots = dedupe(built);
 
   // OSM 以外の情報源を統合（それぞれ無ければ飛ばす）
+  const fakes: string[] = [];
+  const famous = await readWork<Famous[]>('wd-famous.json', []);
   const extra = {
     prefKids: mergePrefKids(spots, await readWork<PrefKids[]>('pref-kids.json', []), near),
-    overture: mergeOverture(spots, await readWork<OvertureSpot[]>('overture.json', []), near),
+    overture: mergeOverture(spots, await readWork<OvertureSpot[]>('overture.json', []), near, famous, fakes),
     gbif: 0,
     wikidata: 0,
     visitors: applyVisitors(spots, await readWork<PrefVisitors[]>('pref-visitors.json', [])),
@@ -104,6 +107,7 @@ export async function buildData() {
     extra.gbif = g.length;
   }
   console.log('[build] 追加した情報源', extra);
+  if (fakes.length) console.log(`[build] 有名な施設の名前を借りた場所を除外 ${fakes.length} 件:\n  ${fakes.join('\n  ')}`);
 
   // 閉館・休業の疑い：OSM のメモ・Wikipedia の説明文・公式サイトの閉館のお知らせ。得点を下げて理由を書く
   // 確認する公式サイトの一覧（リンクを外す前のもの。外したリンクも毎週確認し直す）
