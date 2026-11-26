@@ -67,16 +67,24 @@ export async function loadBounds(meta: Meta, b: Bounds): Promise<Spot[]> {
  * 表示範囲のまわり（1タイル分）を、手が空いたときに先読みしておく。
  * 次に地図を動かしたときに通信を待たずに済む（スマホでは初回の読み込みに 200ms ほどかかるため）
  */
-export function prefetchAround(meta: Meta, b: Bounds): void {
+export function prefetchAround(meta: Meta, b: Bounds, ring = 1): void {
   const s = meta.tileSize;
   const have = new Set(meta.tiles);
   const keys: string[] = [];
-  for (let y = Math.floor(b.south / s) - 1; y <= Math.floor(b.north / s) + 1; y++)
-    for (let x = Math.floor(b.west / s) - 1; x <= Math.floor(b.east / s) + 1; x++) {
+  for (let y = Math.floor(b.south / s) - ring; y <= Math.floor(b.north / s) + ring; y++)
+    for (let x = Math.floor(b.west / s) - ring; x <= Math.floor(b.east / s) + ring; x++) {
       const k = `${x}_${y}`;
       if (have.has(k) && !tileCache.has(k)) keys.push(k);
     }
   if (!keys.length) return;
+  // 画面の中心に近い順に読む
+  const cy = (b.south + b.north) / 2 / s;
+  const cx = (b.west + b.east) / 2 / s;
+  const d = (k: string) => {
+    const [x, y] = k.split('_').map(Number);
+    return (x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2;
+  };
+  keys.sort((a, b) => d(a) - d(b));
   const ric = (window as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
   const run = () => keys.slice(0, 16).forEach(loadTile);
   if (ric) ric(run, { timeout: 2000 });

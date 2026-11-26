@@ -121,6 +121,14 @@ async function refresh() {
   perf.end(`${FX.size ? `fx=${[...FX].join(',')}｜` : ''}候補 ${spots.length}・ピン ${shown}（新規 ${map.created}）
   ピンの内訳 ${map.pinStats}`);
   if (!wide) prefetchAround(state.meta, b);
+  // 詳しい表示の一歩手前では、拡大したときに出る範囲（画面の中心まわり）を先に読んでおく
+  else if (map.zoom >= DETAIL_ZOOM - 1) {
+    const cy = (b.south + b.north) / 2;
+    const cx = (b.west + b.east) / 2;
+    const hy = (b.north - b.south) / 4;
+    const hx = (b.east - b.west) / 4;
+    prefetchAround(state.meta, { south: cy - hy, north: cy + hy, west: cx - hx, east: cx + hx }, 0);
+  }
 
 }
 
