@@ -6,6 +6,19 @@ import type { EventHit } from '../discover/events';
 import type { Spot } from '../types';
 import type { SavedSpot } from './history';
 import { CAT, shortName } from './labels';
+import { h } from './dom';
+
+/** ピンと名前ラベルの間隔（px） */
+const LABEL_GAP = 2;
+
+/**
+ * ピンの中身：アイコンと名前ラベル。
+ * ラベルを Leaflet のツールチップ（別の要素）にすると、拡大・縮小の間ずっと1つずつ幅を測り直して重いので、
+ * ピンの要素の中に入れてピンと一緒に動かす。ラベルを押してもピンを押したことになる
+ */
+function pinHtml(icon: HTMLElement, label: string, cls: string): HTMLElement {
+  return h('div', { class: 'pin-in' }, icon, h('b', { class: `pin-label ${cls}`.trim() }, label));
+}
 
 export interface RankedSpot {
   s: Spot;
@@ -183,16 +196,12 @@ export class DiscoverMap {
     const picks = new Set(this.pickMarkers.values());
     // 位置を測る・書き換えるを交互にすると、そのたびにページ全体の配置を計算し直して重い（スマホで顕著）。
     // ① 前回の書き換えを全部戻す → ② まとめて測る → ③ 計算 → ④ まとめて書き換える、の順にする
-    const labels = markers.map((m) => ({ m, el: m.getTooltip()?.getElement() }));
-    for (const { el } of labels) {
-      if (!el) continue;
-      el.style.visibility = '';
-      el.style.marginLeft = '';
-    }
+    const labels = markers.map((m) => ({ m, el: m.getElement()?.querySelector<HTMLElement>('.pin-label') }));
+    for (const { el } of labels) el?.classList.remove('left', 'hide');
     const icons = markers.map((m) => ({ m, r: m.getElement()?.querySelector('span')?.getBoundingClientRect() }));
     const rects = labels.map(({ el }) => el?.getBoundingClientRect());
     const placed: DOMRect[] = [];
-    const result: { el: HTMLElement; dx: number; show: boolean }[] = [];
+    const result: { el: HTMLElement; cls: 'left' | 'hide' }[] = [];
     labels.forEach(({ m, el }, i) => {
       const r0 = rects[i];
       if (!el || !r0) return;
@@ -204,18 +213,15 @@ export class DiscoverMap {
         placed.push(r0);
         return;
       }
-      // 右がふさがっていたら、ピンの左側に出してみる（左へ dx ずらした位置を計算で求める）
-      const dx = (L.point(m.getTooltip()!.options.offset ?? [0, 0]).x || 0) * 2 + r0.width + 10;
+      // 右がふさがっていたら、ピンの左側に出してみる（左側に出したときの位置を計算で求める）
+      const dx = r0.width + (icons[i].r?.width ?? 0) + 2 * LABEL_GAP;
       const r1 = new DOMRect(r0.x - dx, r0.y, r0.width, r0.height);
       if (free(r1)) {
         placed.push(r1);
-        result.push({ el, dx, show: true });
-      } else result.push({ el, dx: 0, show: false });
+        result.push({ el, cls: 'left' });
+      } else result.push({ el, cls: 'hide' });
     });
-    for (const { el, dx, show } of result) {
-      if (show) el.style.marginLeft = `-${dx}px`;
-      else el.style.visibility = 'hidden';
-    }
+    for (const { el, cls } of result) el.classList.add(cls);
   }
 
   get zoom() {
@@ -299,7 +305,7 @@ export class DiscoverMap {
         const mk = L.marker([s.lat, s.lon], {
           icon: L.divIcon({
             className: `spot-pin${x.pick ? ' pick' : ''}`,
-            html: `<span style="--c:${c.color};--s:${px}px;opacity:${opacity}">${c.icon}</span>`,
+            html: pinHtml(h('span', { style: `--c:${c.color};--s:${px}px;opacity:${opacity}` }, c.icon), shortName(s.name), x.pick ? '' : 'other-label'),
             iconSize: [px, px],
             iconAnchor: [r, r],
           }),
@@ -307,15 +313,7 @@ export class DiscoverMap {
           riseOnHover: true,
           zIndexOffset: zIndex,
         });
-        mk.bindTooltip(shortName(s.name), {
-          permanent: true,
-          direction: 'right',
-          offset: [r + 2, 0],
-          className: `pin-label${x.pick ? '' : ' other-label'}`,
-          interactive: true,
-        });
         mk.bindPopup(() => popup(s), { maxWidth: 340, minWidth: 260, autoPan: false, className: 'card-popup' });
-        mk.getTooltip()?.on('click', () => mk.openPopup());
         mk.addTo(x.pick ? this.pickLayer : this.otherLayer);
         m = mk;
       }
@@ -343,10 +341,13 @@ export class DiscoverMap {
     }
     for (const list of groups.values()) {
       const ev = list[0].ev;
+      // 会場名（なければイベント名）を添える。長いものは短く
+      const name = ev.approx ? `${ev.city.replace(/^横浜市/, '')}のイベント` : (ev.spotName ?? ev.venue ?? ev.title);
+      const label = name.length > 14 ? name.slice(0, 14) + '…' : name;
       const m = L.marker([ev.lat, ev.lon], {
         icon: L.divIcon({
           className: `event-pin${ev.approx ? ' approx' : ''}`,
-          html: `<span>🗓️${list.length > 1 ? `<b>${list.length}</b>` : ''}</span>`,
+          html: pinHtml(h('span', {}, '🗓️', list.length > 1 && h('b', {}, String(list.length))), label, 'event-label'),
           iconSize: [30, 30],
           iconAnchor: [15, 15],
         }),
@@ -354,17 +355,7 @@ export class DiscoverMap {
         riseOnHover: true,
         zIndexOffset: 1500,
       });
-      // 会場名（なければイベント名）を添える。長いものは短く
-      const label = ev.approx ? `${ev.city.replace(/^横浜市/, '')}のイベント` : (ev.spotName ?? ev.venue ?? ev.title);
-      m.bindTooltip(label.length > 14 ? label.slice(0, 14) + '…' : label, {
-        permanent: true,
-        direction: 'right',
-        offset: [15, 0],
-        className: 'pin-label event-label',
-        interactive: true,
-      });
       m.bindPopup(() => popup(list), { maxWidth: 360, minWidth: 260, autoPan: false, className: 'event-popup' });
-      m.getTooltip()?.on('click', () => m.openPopup());
       m.addTo(this.eventLayer);
       for (const x of list) this.eventMarkers.set(x.ev.id, m);
     }
