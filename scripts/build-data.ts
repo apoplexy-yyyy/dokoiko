@@ -19,9 +19,10 @@ import type { PrefKids, PrefVisitors } from './collect-pref.ts';
 import type { GbifObs } from './collect-gbif.ts';
 import { applyVisitors, gbifSpots, mergeOverture, mergePrefKids, mergeWikidata } from './lib/merge.ts';
 import type { WdSpot } from './collect-wikidata.ts';
-import { SUSPECT_FACTOR, deadLink, osmClosure, webClosure, wikidataClosure, wikipediaClosure, type Closure, type WebCheck } from './lib/closed.ts';
+import { SUSPECT_FACTOR, deadLink, osmClosure, pastClosure, webClosure, wikidataClosure, wikipediaClosure, type Closure, type WebCheck } from './lib/closed.ts';
 import { loadCityOf } from './lib/cities.ts';
 import type { Famous } from './lib/fake.ts';
+import { normName } from './lib/name.ts';
 
 const OUT = join('public', 'data', region.id);
 
@@ -60,6 +61,7 @@ export async function buildData() {
   const built: Spot[] = [];
   const removed: string[] = []; // 閉館・廃止で消したスポット
   const suspects = new Map<string, Closure>(); // スポットID → 疑いの理由
+  const ownWd = new Set<string>(); // 説明文（Wikidata・Wikipedia）がそのスポット自身のもの
   for (const raw0 of osm.spots) {
     const q = raw0.tags.wikidata ?? match[raw0.id];
     const raw = q && !raw0.tags.wikidata ? { ...raw0, tags: { ...raw0.tags, wikidata: q } } : raw0;
@@ -70,6 +72,8 @@ export async function buildData() {
       continue;
     }
     if (closure) suspects.set(raw.id, closure);
+    // wikidata タグが直接付いている、または項目の名前がスポットの名前と同じ
+    if (raw0.tags.wikidata || (w?.label && normName(w.label) === normName(raw.tags.name ?? ''))) ownWd.add(raw.id);
     const title = wikiTitle(raw.tags, w);
     const s = toSpot(
       raw,
@@ -108,6 +112,14 @@ export async function buildData() {
   }
   console.log('[build] 追加した情報源', extra);
   if (fakes.length) console.log(`[build] 有名な施設の名前を借りた場所を除外 ${fakes.length} 件:\n  ${fakes.join('\n  ')}`);
+
+  // 説明文が「〜にあった施設」と過去形のもの：自身の説明文なら消し、そうでなければ疑いにする
+  for (let i = spots.length - 1; i >= 0; i--) {
+    const s = spots[i];
+    const past = pastClosure([s.desc, s.wp?.extract], s.cat, s.src === 'Wikidata' || ownWd.has(s.id));
+    if (past?.level === 'closed') removed.push(...spots.splice(i, 1).map((x) => `${x.name}（${past.why}）`));
+    else if (past && !suspects.has(s.id)) suspects.set(s.id, past);
+  }
 
   // 閉館・休業の疑い：OSM のメモ・Wikipedia の説明文・公式サイトの閉館のお知らせ。得点を下げて理由を書く
   // 確認する公式サイトの一覧（リンクを外す前のもの。外したリンクも毎週確認し直す）

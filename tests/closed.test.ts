@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { osmClosure, pageClosure, webClosure, wikidataClosure, wikipediaClosure } from '../scripts/lib/closed';
+import { osmClosure, pageClosure, webClosure, wikidataClosure, pastClosure, wikipediaClosure } from '../scripts/lib/closed';
 
 describe('閉館・閉業の判定', () => {
   it('公式サイトの閉館のお知らせを見つける', () => {
@@ -42,5 +42,22 @@ describe('閉館・閉業の判定', () => {
     expect(wikipediaClosure('2021年2月より開館以来初の長期休館をしたのち、2024年3月15日に再開', 'museum')).toBeUndefined();
     expect(wikipediaClosure('かつて箱根にあった関所である。', 'history')).toBeUndefined();
     expect(wikipediaClosure('毎月第3月曜と年末年始は休園。入園無料。', 'park')).toBeUndefined();
+  });
+});
+
+describe('説明文の過去形（〜にあった施設）', () => {
+  it('自身の説明文なら閉館として消す', () => {
+    expect(pastClosure(['神奈川県横浜市中区の山下埠頭にあった、機動戦士ガンダムを題材とした複合施設'], 'play', true)?.level).toBe('closed');
+    expect(pastClosure([undefined, '横浜水道記念館は、横浜市保土ケ谷区にあった、水道をテーマにした博物館（水道記念館）である。'], 'museum', true)?.level).toBe('closed');
+  });
+  it('別の項目の説明文なら疑いにとどめる', () => {
+    expect(pastClosure(['横浜市にあった海事博物館'], 'museum', false)?.level).toBe('suspect');
+  });
+  it('史跡や、別のものの話は除く', () => {
+    expect(pastClosure(['神奈川県小田原市にあった城'], 'museum', true)).toBeUndefined();
+    expect(pastClosure(['かつて箱根にあった関所である'], 'museum', true)).toBeUndefined();
+    expect(pastClosure(['海軍工廠にあった建物を移築した記念館'], 'museum', true)).toBeUndefined();
+    expect(pastClosure(['横浜市にあった競馬場の跡の公園'], 'park', true)).toBeUndefined();
+    expect(pastClosure(['横浜市にある水族館'], 'water', true)).toBeUndefined();
   });
 });

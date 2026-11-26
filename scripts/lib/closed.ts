@@ -58,6 +58,31 @@ export function wikipediaClosure(text: string | undefined, cat: string): Closure
   return undefined;
 }
 
+/**
+ * 説明文が過去形で施設を説明しているか（「山下埠頭にあった、ガンダムを題材とした複合施設」「保土ケ谷区にあった、水道をテーマにした博物館である」）。
+ * 城・関所・古墳などの史跡は「〜にあった城」と書かれるのがふつうなので、文の終わりが施設を表す言葉のときだけ。
+ * 「〜にあった建物を移築した記念館」のように、別のものの話は除く
+ */
+const PAST_FACILITY =
+  /[^。]{0,30}(に|で)(あった|存在した)[、,]?[^。]{0,40}?(施設|館|園|パーク|ランド|ミュージアム|ギャラリー|プール|遊園地|テーマパーク|センター|アクアリウム)(（[^）]*）)?(である|だった)?(。|$)/;
+const NOT_ITSELF = /移築|移設|復元|再現|改装|改修|利用|活用|継承|引き継|跡地|跡に|移転|前身|旧称|名称/;
+
+/**
+ * Wikidata・Wikipedia の説明文から閉館を読み取る。
+ * 説明文がそのスポット自身のもの（own：同じ名前の項目・記事）なら閉館として消し、そうでなければ疑いにとどめる
+ */
+export function pastClosure(texts: (string | undefined)[], cat: string, own: boolean): Closure | undefined {
+  if (['history', 'view', 'nature', 'park'].includes(cat)) return undefined;
+  for (const t of texts) {
+    const first = t?.split('。')[0];
+    if (!first) continue;
+    const m = (first + '。').match(PAST_FACILITY);
+    if (!m || NOT_ITSELF.test(m[0])) continue;
+    return { level: own ? 'closed' : 'suspect', why: `説明文に「${quote(m[0].replace(/。$/, ''))}」` };
+  }
+  return undefined;
+}
+
 /** 公式サイトの確認結果（check-websites.ts） */
 export interface WebCheck {
   checked: string; // YYYY-MM-DD
@@ -79,7 +104,7 @@ export function pageClosure(html: string): Pick<WebCheck, 'st' | 'note'> {
     return { st: 'parked', note: '公式サイトのドメインが売りに出されています' };
   const patterns = [
     /([^。！!]{0,30})(閉館|閉園|閉店|営業を終了|営業終了|閉業)(いた|致)?しました/g,
-    /([^。！!]{0,30})をもちまして[^。]{0,20}(閉館|閉園|閉店|営業を終了|閉業)/g,
+    /([^。！!]{0,30})をもちまして[^。]{0,20}(閉館|閉園|閉店|営業を終了|閉業|終了)/g,
     /([^。！!]{0,30})(長らく|長い間|永らく)[^。]{0,10}ご愛顧/g,
   ];
   for (const re of patterns)
