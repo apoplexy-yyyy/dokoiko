@@ -242,38 +242,88 @@ export class DiscoverMap {
 
   private declutterInner() {
     const pad = 2;
-    const hit = (a: DOMRect, b: DOMRect) =>
-      a.left < b.right + pad && b.left < a.right + pad && a.top < b.bottom + pad && b.top < a.bottom + pad;
+    type Box = { l: number; t: number; r: number; b: number };
+    const hit = (a: Box, b: Box) => a.l < b.r + pad && b.l < a.r + pad && a.t < b.b + pad && b.t < a.b + pad;
     const markers = [...new Set([...this.pickMarkers.values(), ...this.eventMarkers.values(), ...this.otherMarkers])];
     const picks = new Set(this.pickMarkers.values());
-    // 位置を測る・書き換えるを交互にすると、そのたびにページ全体の配置を計算し直して重い（スマホで顕著）。
-    // ① 前回の書き換えを全部戻す → ② まとめて測る → ③ 計算 → ④ まとめて書き換える、の順にする
-    const labels = markers.map((m) => ({ m, el: m.getElement()?.querySelector<HTMLElement>('.pin-label') }));
-    for (const { el } of labels) el?.classList.remove('left', 'hide');
-    const icons = markers.map((m) => ({ m, r: m.getElement()?.querySelector('span')?.getBoundingClientRect() }));
-    const rects = labels.map(({ el }) => el?.getBoundingClientRect());
-    const placed: DOMRect[] = [];
-    const result: { el: HTMLElement; cls: 'left' | 'hide' }[] = [];
-    labels.forEach(({ m, el }, i) => {
-      const r0 = rects[i];
-      if (!el || !r0) return;
-      // 候補のラベルは候補のピンだけを避ける（イベントのピンの上には重なってよい）
-      const obstacles = picks.has(m) ? icons.filter((x) => picks.has(x.m)) : icons;
-      const free = (r: DOMRect) =>
-        !placed.some((p) => hit(r, p)) && !obstacles.some((x) => x.m !== m && x.r && x.r.width > 0 && hit(r, x.r));
-      if (free(r0)) {
-        placed.push(r0);
-        return;
-      }
-      // 右がふさがっていたら、ピンの左側に出してみる（左側に出したときの位置を計算で求める）
-      const dx = r0.width + (icons[i].r?.width ?? 0) + 2 * LABEL_GAP;
-      const r1 = new DOMRect(r0.x - dx, r0.y, r0.width, r0.height);
-      if (free(r1)) {
-        placed.push(r1);
-        result.push({ el, cls: 'left' });
-      } else result.push({ el, cls: 'hide' });
+    // ラベルの位置はブラウザに問い合わせず、ピンの座標とラベルの幅（文字から計算）で求める。
+    // 問い合わせると、そのたびにページ全体の配置計算が走り、スマホでは数十ms かかるため
+    const items = markers.map((m) => {
+      const el = m.getElement()?.querySelector<HTMLElement>('.pin-label') ?? null;
+      const c = this.map.latLngToContainerPoint(m.getLatLng());
+      const r = (m as PinMarker).pin?.px ? (m as PinMarker).pin.px / 2 : 15;
+      const icon: Box = { l: c.x - r, t: c.y - r, r: c.x + r, b: c.y + r };
+      return { m, el, c, r, icon };
     });
-    for (const { el, cls } of result) el.classList.add(cls);
+    const placed: Box[] = [];
+    const result: { el: HTMLElement; cls: '' | 'left' | 'hide' }[] = [];
+    for (const it of items) {
+      if (!it.el) continue;
+      const size = this.labelSize(it.el);
+      if (!size) continue;
+      const [w, hgt] = size;
+      // 候補のラベルは候補のピンだけを避ける（イベントのピンの上には重なってよい）
+      const obstacles = picks.has(it.m) ? items.filter((x) => picks.has(x.m)) : items;
+      const free = (b: Box) => !placed.some((p) => hit(b, p)) && !obstacles.some((x) => x.m !== it.m && hit(b, x.icon));
+      const top = it.c.y - hgt / 2;
+      const right: Box = { l: it.c.x + it.r + LABEL_GAP, t: top, r: it.c.x + it.r + LABEL_GAP + w, b: top + hgt };
+      if (free(right)) {
+        placed.push(right);
+        result.push({ el: it.el, cls: '' });
+        continue;
+      }
+      // 右がふさがっていたら、ピンの左側に出してみる
+      const left: Box = { l: it.c.x - it.r - LABEL_GAP - w, t: top, r: it.c.x - it.r - LABEL_GAP, b: top + hgt };
+      if (free(left)) {
+        placed.push(left);
+        result.push({ el: it.el, cls: 'left' });
+      } else result.push({ el: it.el, cls: 'hide' });
+    }
+    // 変わったものだけ書き換える
+    for (const { el, cls } of result) {
+      const now = el.classList.contains('hide') ? 'hide' : el.classList.contains('left') ? 'left' : '';
+      if (now === cls) continue;
+      el.classList.remove('left', 'hide');
+      if (cls) el.classList.add(cls);
+    }
+  }
+
+  /** ラベルの種類ごとの文字の書式・余白・高さ（最初の1回だけブラウザに問い合わせる） */
+  private labelFmt = new Map<string, { font: string; extra: number; height: number; max: number }>();
+  /** ラベルの幅の計算結果（種類＋文字ごと） */
+  private labelWidth = new Map<string, number>();
+  private measureCtx?: CanvasRenderingContext2D | null;
+
+  /** ラベルの幅と高さ。幅は文字から計算する（ブラウザの配置計算を起こさない） */
+  private labelSize(el: HTMLElement): [number, number] | undefined {
+    const kind = el.classList.contains('event-label') ? 'e' : el.classList.contains('other-label') ? 'o' : 'p';
+    const text = el.textContent ?? '';
+    this.measureCtx ??= document.createElement('canvas').getContext('2d');
+    const ctx = this.measureCtx;
+    if (!ctx) return undefined;
+    let fmt = this.labelFmt.get(kind);
+    if (!fmt) {
+      // 種類ごとに1回だけ、実際のラベルを測って書式と余白を覚える
+      const cs = getComputedStyle(el);
+      const font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      ctx.font = font;
+      const tw = ctx.measureText(text).width;
+      const w = el.offsetWidth;
+      const max = parseFloat(cs.maxWidth) || 180;
+      // 余白＋枠の幅（max-width は余白込み。長い名前で幅が上限に達していたら、余白は既定値にする）
+      const extra = w < max - 1 ? Math.max(0, w - tw) : 14;
+      fmt = { font, extra, height: el.offsetHeight, max };
+      if (!fmt.height) return undefined; // まだ表示されていない
+      this.labelFmt.set(kind, fmt);
+    }
+    const key = kind + text;
+    let w = this.labelWidth.get(key);
+    if (w === undefined) {
+      ctx.font = fmt.font;
+      w = Math.min(ctx.measureText(text).width + fmt.extra, fmt.max);
+      this.labelWidth.set(key, w);
+    }
+    return [w, fmt.height];
   }
 
   get zoom() {
@@ -333,10 +383,28 @@ export class DiscoverMap {
     this.pickMarkers.clear();
     this.otherMarkers = [];
     const size = this.map.getSize();
-    const taken: { pt: L.Point; r: number }[] = [...this.eventMarkers.values()].map((m) => ({
-      pt: this.map.latLngToContainerPoint(m.getLatLng()),
-      r: 15,
-    }));
+    // すでに置いたピン。重なりの判定は、画面を升目に分けて近くの升目だけ調べる（全部と比べると数十〜数百倍の計算になる）
+    const CELL = 48; // ピンの半径の和の最大（23+23）より大きく
+    const grid = new Map<number, { x: number; y: number; r: number }[]>();
+    const cellKey = (cx: number, cy: number) => cx * 4096 + cy;
+    const put = (x: number, y: number, r: number) => {
+      const k = cellKey(Math.floor(x / CELL), Math.floor(y / CELL));
+      const a = grid.get(k);
+      if (a) a.push({ x, y, r });
+      else grid.set(k, [{ x, y, r }]);
+    };
+    const overlaps = (x: number, y: number, r: number) => {
+      const cx = Math.floor(x / CELL);
+      const cy = Math.floor(y / CELL);
+      for (let i = cx - 1; i <= cx + 1; i++)
+        for (let j = cy - 1; j <= cy + 1; j++)
+          for (const o of grid.get(cellKey(i, j)) ?? []) if (Math.hypot(o.x - x, o.y - y) < (o.r + r) * 0.9) return true;
+      return false;
+    };
+    for (const m of this.eventMarkers.values()) {
+      const p = this.map.latLngToContainerPoint(m.getLatLng());
+      put(p.x, p.y, 15);
+    }
     const wmax = Math.max(1e-9, ...list.map((x) => x.w));
 
     // 置く場所を決める（得点の高い順、ほかのピンと重ならないもの）
@@ -349,9 +417,9 @@ export class DiscoverMap {
       const pt = this.map.latLngToContainerPoint([s.lat, s.lon]);
       if (!x.pick) {
         if (pt.x < r || pt.y < r || pt.x > size.x - r || pt.y > size.y - r) continue;
-        if (taken.some((o) => o.pt.distanceTo(pt) < (o.r + r) * 0.9)) continue;
+        if (overlaps(pt.x, pt.y, r)) continue;
       }
-      taken.push({ pt, r });
+      put(pt.x, pt.y, r);
       placed.push({
         s,
         pick: x.pick,
