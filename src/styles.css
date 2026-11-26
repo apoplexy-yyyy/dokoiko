@@ -436,3 +436,6 @@ select { flex: 1; min-width: 0; }
 
 /* 隠してある（次に使い回す）ピン */
 .leaflet-marker-icon.parked { display: none; }
+
+/* canvas のピンの拡大・縮小に使う見えない目印 */
+.pin-probe { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; }

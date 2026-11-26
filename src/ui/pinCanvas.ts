@@ -55,8 +55,6 @@ export class PinCanvas extends L.Layer {
   private ctx!: CanvasRenderingContext2D;
   private pins: CanvasPin[] = [];
   private placed: Placed[] = [];
-  /** 描いたときの表示範囲（拡大・縮小のアニメーション用） */
-  private drawnBounds?: L.LatLngBounds;
   /** ピンの絵（種類・大きさ・おすすめか）を覚えておく */
   private sprites = new Map<string, HTMLCanvasElement>();
   /** ラベルの文字（幅を超えるときは … で切ったもの）と幅 */
@@ -64,6 +62,11 @@ export class PinCanvas extends L.Layer {
   private theme?: Theme;
   /** 描いたときの画面左上の位置（地図の座標。地図を動かしても変わらない） */
   private origin = L.point(0, 0);
+  /** 描いたときの画面左上の緯度経度 */
+  private nw = L.latLng(0, 0);
+  private probe!: HTMLElement;
+  /** 拡大・縮小のアニメーション中 */
+  private animating = false;
   /** 直近の描画にかかった時間（計測用） */
   lastMs = 0;
   /** 直近の描画の内訳（計測用） */
@@ -74,14 +77,18 @@ export class PinCanvas extends L.Layer {
     const pane = map.getPane('pinPane') ?? map.createPane('pinPane');
     pane.style.zIndex = '610';
     pane.style.pointerEvents = 'none';
-    this.canvas = L.DomUtil.create('canvas', 'pin-canvas leaflet-zoom-animated', pane);
+    this.canvas = L.DomUtil.create('canvas', 'pin-canvas', pane);
     this.ctx = this.canvas.getContext('2d')!;
+    // 拡大・縮小のアニメーションに合わせて動く、見えない目印（地図の画像と同じ動きをする）。
+    // アニメーション中は毎フレームこの目印の拡大率と位置を読み、ピンをその時点の位置に描き直す
+    this.probe = L.DomUtil.create('div', 'pin-probe leaflet-zoom-animated', pane);
     // 地図を動かしている間・止めた後は canvas が地図と一緒に動くので描き直さない（新しいピンが来たら描く）。
     // 拡大・縮小の後と、大きさが変わったときだけ描き直す
-    map.on('zoomend viewreset resize', this.redraw, this);
+    map.on('viewreset resize', this.redraw, this);
     map.on('zoomend', this.onZoomEnd, this);
     map.on('zoomanim', this.animateZoom, this);
     map.on('zoomstart', this.onZoomStart, this);
+    map.on('zoom', this.onZoomFrame, this);
     map.on('click', this.onClick, this);
     map.on('mousemove', this.onHover, this);
     // 日本語の Web フォントは使う文字ごとに後から読み込まれ、幅が変わる。
@@ -98,13 +105,15 @@ export class PinCanvas extends L.Layer {
   }
 
   onRemove(map: L.Map) {
-    map.off('zoomend viewreset resize', this.redraw, this);
+    map.off('viewreset resize', this.redraw, this);
     map.off('zoomend', this.onZoomEnd, this);
     map.off('zoomanim', this.animateZoom, this);
     map.off('zoomstart', this.onZoomStart, this);
+    map.off('zoom', this.onZoomFrame, this);
     map.off('click', this.onClick, this);
     map.off('mousemove', this.onHover, this);
     this.canvas.remove();
+    this.probe.remove();
     return this;
   }
 
@@ -117,7 +126,7 @@ export class PinCanvas extends L.Layer {
   }
 
   /**
-   * 拡大・縮小の間は名前ラベルを出さない（canvas ごと拡大縮小するので、ラベルがピンからずれて見えるため）。
+   * 拡大・縮小の間は名前ラベルを出さない（ピンの間隔が変わり、ラベルの左右・重なりの判定が合わなくなるため）。
    * 新しいピンが来たら（setPins）出す。来ないとき（吹き出しを開いている間など）に備えて、少し後にも出す
    */
   private hideLabels = false;
@@ -125,6 +134,11 @@ export class PinCanvas extends L.Layer {
   private onZoomStart() {
     this.hideLabels = true;
     this.redraw();
+  }
+
+  /** 指2本での拡大・縮小の間は、地図が1フレームごとに変わるので、そのたびにピンを描き直す */
+  private onZoomFrame() {
+    if (this.hideLabels && !this.animating) this.redraw();
   }
 
   /** 表示中のピンの位置（ほかのピンの配置で避けるため） */
@@ -144,7 +158,9 @@ export class PinCanvas extends L.Layer {
     // canvas を画面の左上に合わせる（そのときの位置を覚え、押した位置の換算に使う）
     // 画面より PAD だけ広く取り、地図を動かした直後に画面の端でラベルが切れないようにする
     this.origin = map.containerPointToLayerPoint([0, 0]);
+    this.nw = map.containerPointToLatLng([0, 0]);
     L.DomUtil.setPosition(this.canvas, this.origin.subtract([PAD, PAD]));
+    L.DomUtil.setPosition(this.probe, this.origin);
     const cw = size.x + PAD * 2;
     const chh = size.y + PAD * 2;
     if (this.canvas.width !== Math.round(cw * dpr) || this.canvas.height !== Math.round(chh * dpr)) {
@@ -153,7 +169,6 @@ export class PinCanvas extends L.Layer {
       this.canvas.style.width = `${cw}px`;
       this.canvas.style.height = `${chh}px`;
     }
-    this.drawnBounds = L.latLngBounds(map.containerPointToLatLng([-PAD, size.y + PAD]), map.containerPointToLatLng([size.x + PAD, -PAD]));
     // 色・フォントは覚えておく（毎回ページから読むと、スマホではスタイルの計算し直しが起きることがある）
     this.theme ??= readTheme();
     const tLayout = performance.now();
@@ -168,7 +183,7 @@ export class PinCanvas extends L.Layer {
     // 重なり順の低いものから描く（ピンとそのラベルは一緒に）
     let labelMs = 0;
     for (const p of [...this.placed].sort((a, b) => a.pin.z - b.pin.z)) {
-      this.drawPin(p, dpr);
+      this.drawPin(p, p.x, p.y, dpr);
       if (p.lb && !this.hideLabels) {
         const t = performance.now();
         this.drawLabel(p);
@@ -199,6 +214,11 @@ export class PinCanvas extends L.Layer {
     const placedBoxes: Box[] = [];
     this.placed = [];
     for (const it of byPriority) {
+      if (this.hideLabels) {
+        // 拡大・縮小の間はラベルを出さないので、幅も測らない
+        this.placed.push({ pin: it.pin, x: it.x, y: it.y });
+        continue;
+      }
       const { text, w } = this.fitText(it.pin);
       void text;
       const h = labelHeight(it.pin.labelKind);
@@ -219,7 +239,8 @@ export class PinCanvas extends L.Layer {
     }
   }
 
-  private drawPin(p: Placed, dpr: number) {
+  private drawPin(p: Placed, x: number, y: number, dpr: number) {
+    p = { ...p, x, y };
     const ctx = this.ctx;
     const sprite = this.sprite(p.pin, dpr);
     // 絵は大きさの段階ごとに1枚なので、実際の大きさに縮めて貼る
@@ -338,6 +359,8 @@ export class PinCanvas extends L.Layer {
   }
 
   private onZoomEnd() {
+    this.animating = false;
+    this.redraw();
     clearTimeout(this.showLabelsTimer);
     this.showLabelsTimer = window.setTimeout(() => {
       if (!this.hideLabels) return;
@@ -346,15 +369,36 @@ export class PinCanvas extends L.Layer {
     }, 800);
   }
 
-  /** 拡大・縮小のアニメーション中は、描いた絵ごと拡大縮小する */
+  /**
+   * 拡大・縮小のアニメーション（ボタン・ダブルタップ・指を離した後）。
+   * canvas ごと拡大縮小するとピンの大きさまで変わってずれて見えるので、
+   * 目印に地図の画像と同じ動きをさせ、毎フレームその拡大率と位置からピンの位置を求めて、元の大きさで描き直す
+   */
   private animateZoom(e: L.ZoomAnimEvent) {
-    if (!this.drawnBounds) return;
-    const map = this._map as L.Map & {
-      _latLngBoundsToNewLayerBounds(b: L.LatLngBounds, z: number, c: L.LatLng): L.Bounds;
+    const map = this._map as L.Map & { _latLngToNewLayerPoint(ll: L.LatLng, z: number, c: L.LatLng): L.Point };
+    L.DomUtil.setTransform(this.probe, map._latLngToNewLayerPoint(this.nw, e.zoom, e.center), map.getZoomScale(e.zoom));
+    if (this.animating) return;
+    this.animating = true;
+    this.hideLabels = true;
+    const dpr = window.devicePixelRatio || 1;
+    const sorted = [...this.placed].sort((a, b) => a.pin.z - b.pin.z);
+    const frame = () => {
+      if (!this.animating) return;
+      const m = getComputedStyle(this.probe).transform.match(/matrix(3d)?\(([^)]+)\)/);
+      if (m) {
+        const v = m[2].split(',').map(Number);
+        const [s, tx, ty] = m[1] ? [v[0], v[12], v[13]] : [v[0], v[4], v[5]];
+        const size = this._map.getSize();
+        const ctx = this.ctx;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, size.x + PAD * 2, size.y + PAD * 2);
+        ctx.translate(PAD, PAD);
+        // 描いたときの画面の座標 (x, y) は、今は 目印の位置 + 拡大率 × (x, y) にある
+        for (const p of sorted) this.drawPin(p, tx - this.origin.x + s * p.x, ty - this.origin.y + s * p.y, dpr);
+      }
+      requestAnimationFrame(frame);
     };
-    const scale = map.getZoomScale(e.zoom);
-    const offset = map._latLngBoundsToNewLayerBounds(this.drawnBounds, e.zoom, e.center).min!;
-    L.DomUtil.setTransform(this.canvas, offset, scale);
+    requestAnimationFrame(frame);
   }
 
   /** 押した位置にあるピン（上に描いたものから探す） */
