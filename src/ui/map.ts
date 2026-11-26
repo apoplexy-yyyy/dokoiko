@@ -45,7 +45,19 @@ function pinHtml(icon: HTMLElement, label: string, cls: string): HTMLElement {
 }
 
 /** 今の大きさ・濃さ・重なり順を覚えておくピン（変わったときだけ書き換える） */
-type PinMarker = L.Marker & { pin: { px: number; op: string; z: number; span?: HTMLElement | null } };
+type PinMarker = L.Marker & {
+  pin: { px: number; op: string; z: number; pick: boolean; s: Spot; span?: HTMLElement | null; label?: HTMLElement | null };
+};
+
+/** 置くことにしたピン */
+interface Placement {
+  s: Spot;
+  pick: boolean;
+  px: number;
+  op: string;
+  z: number;
+  key: string;
+}
 
 export interface RankedSpot {
   s: Spot;
@@ -307,11 +319,15 @@ export class DiscoverMap {
    * @returns 表示した数
    */
   showSpots(list: RankedSpot[], popup: (s: Spot) => HTMLElement): number {
-    // 地図を少し動かしただけなら大半のピンは前と同じなので、作り直さずに使い回す（変わった分だけ足し引きする）
-    const prev = this.spotMarkers;
+    // ピンは作り直さない：
+    // ① 前と同じ場所のピンは、大きさ・濃さだけ直して使い回す
+    // ② 画面から出ていくピンは、新しく入ってくる場所へ移して中身（アイコン・色・名前）を入れ替える
+    // ③ 足りない分だけ新しく作り、余った分だけ外す
+    // （ピンを作る・外すのはスマホで1個 0.6ms ほどかかり、地図を動かすたびに数十個あるため）
+    const prev = this.spotMarkers as Map<string, PinMarker>;
     this.spotMarkers = new Map();
     this.created = 0;
-    const T = { place: 0, reuse: 0, create: 0, remove: 0 };
+    const T = { place: 0, reuse: 0, recycle: 0, create: 0, remove: 0 };
     const now = perf.on ? () => performance.now() : () => 0;
     let t = now();
     this.pickMarkers.clear();
@@ -322,7 +338,9 @@ export class DiscoverMap {
       r: 15,
     }));
     const wmax = Math.max(1e-9, ...list.map((x) => x.w));
-    let shown = 0;
+
+    // 置く場所を決める（得点の高い順、ほかのピンと重ならないもの）
+    const placed: Placement[] = [];
     for (const x of list.slice(0, 800)) {
       const { s } = x;
       const score = Math.sqrt(x.w / wmax); // 0〜1
@@ -331,66 +349,125 @@ export class DiscoverMap {
       const pt = this.map.latLngToContainerPoint([s.lat, s.lon]);
       if (!x.pick) {
         if (pt.x < r || pt.y < r || pt.x > size.x - r || pt.y > size.y - r) continue;
-        if (taken.some((t) => t.pt.distanceTo(pt) < (t.r + r) * 0.9)) continue;
+        if (taken.some((o) => o.pt.distanceTo(pt) < (o.r + r) * 0.9)) continue;
       }
       taken.push({ pt, r });
-      const t1 = now();
-      T.place += t1 - t;
-      const opacity = (0.7 + 0.3 * score).toFixed(2);
-      const zIndex = Math.round(score * 1000) + (x.pick ? 2000 : 0);
-      // 大きさ・濃さが変わっても作り直さず、その場で直す（地図を動かすと一番高い得点が変わり、ほぼ全部の大きさが変わるため）
-      const key = `${s.id}|${x.pick ? 1 : 0}`;
-      let m = prev.get(key) as PinMarker | undefined;
-      if (m) {
-        prev.delete(key);
-        if (m.pin.z !== zIndex) m.setZIndexOffset(zIndex);
-        const el = m.getElement();
-        const span = (m.pin.span ??= el?.querySelector('span'));
-        if (el && span && m.pin.px !== px) {
-          el.style.width = el.style.height = `${px}px`;
-          el.style.marginLeft = el.style.marginTop = `${-r}px`;
-          span.style.setProperty('--s', `${px}px`);
-        }
-        if (span && m.pin.op !== opacity) span.style.opacity = opacity;
-        m.pin.px = px;
-        m.pin.op = opacity;
-        m.pin.z = zIndex;
-        T.reuse += now() - t1;
-      } else {
-        const c = CAT[s.cat] ?? CAT.other;
-        const mk = L.marker([s.lat, s.lon], {
-          icon: L.divIcon({
-            className: `spot-pin${x.pick ? ' pick' : ''}`,
-            html: pinHtml(h('span', { style: `--c:${c.color};--s:${px}px;opacity:${opacity}` }, c.icon), shortName(s.name), x.pick ? '' : 'other-label'),
-            iconSize: [px, px],
-            iconAnchor: [r, r],
-          }),
-          title: s.name,
-          riseOnHover: true,
-          zIndexOffset: zIndex,
-        }) as PinMarker;
-        mk.pin = { px, op: opacity, z: zIndex };
-        mk.bindPopup(() => popup(s), { maxWidth: 340, minWidth: 260, autoPan: false, className: 'card-popup' });
-        mk.addTo(x.pick ? this.pickLayer : this.otherLayer);
-        m = mk;
-        this.created++;
-        T.create += now() - t1;
-      }
-      this.spotMarkers.set(key, m);
-      if (x.pick) this.pickMarkers.set(s.id, m);
-      else this.otherMarkers.push(m);
-      shown++;
-      t = now();
+      placed.push({
+        s,
+        pick: x.pick,
+        px,
+        op: (0.7 + 0.3 * score).toFixed(2),
+        z: Math.round(score * 1000) + (x.pick ? 2000 : 0),
+        key: `${s.id}|${x.pick ? 1 : 0}`,
+      });
     }
-    T.place += now() - t;
-    // 今回出さなかったピンを外す
+    T.place = now() - t;
+
+    // ① 前と同じピン
     t = now();
-    for (const m of prev.values()) m.remove();
+    const fresh: Placement[] = [];
+    for (const p of placed) {
+      const m = prev.get(p.key);
+      if (!m) {
+        fresh.push(p);
+        continue;
+      }
+      prev.delete(p.key);
+      this.updatePin(m, p);
+      this.keep(m, p);
+    }
+    T.reuse = now() - t;
+
+    // ② 出ていくピンを入ってくる場所へ移す（おすすめかどうかが同じもの同士）
+    t = now();
+    const spare = { pick: [] as PinMarker[], other: [] as PinMarker[] };
+    for (const m of prev.values()) spare[m.pin.pick ? 'pick' : 'other'].push(m);
+    const toCreate: Placement[] = [];
+    for (const p of fresh) {
+      const m = spare[p.pick ? 'pick' : 'other'].pop();
+      if (!m) {
+        toCreate.push(p);
+        continue;
+      }
+      this.recyclePin(m, p);
+      this.keep(m, p);
+    }
+    T.recycle = now() - t;
+
+    // ③ 足りない分を作る
+    t = now();
+    for (const p of toCreate) {
+      const c = CAT[p.s.cat] ?? CAT.other;
+      const r = p.px / 2;
+      const m = L.marker([p.s.lat, p.s.lon], {
+        icon: L.divIcon({
+          className: `spot-pin${p.pick ? ' pick' : ''}`,
+          html: pinHtml(h('span', { style: `--c:${c.color};--s:${p.px}px;opacity:${p.op}` }, c.icon), shortName(p.s.name), p.pick ? '' : 'other-label'),
+          iconSize: [p.px, p.px],
+          iconAnchor: [r, r],
+        }),
+        title: p.s.name,
+        riseOnHover: true,
+        zIndexOffset: p.z,
+      }) as PinMarker;
+      m.pin = { px: p.px, op: p.op, z: p.z, pick: p.pick, s: p.s };
+      // 吹き出しの中身は開いたときに作る。移した後も今の場所を出すよう m.pin.s を見る
+      m.bindPopup(() => popup(m.pin.s), { maxWidth: 340, minWidth: 260, autoPan: false, className: 'card-popup' });
+      m.addTo(p.pick ? this.pickLayer : this.otherLayer);
+      this.created++;
+      this.keep(m, p);
+    }
+    T.create = now() - t;
+
+    // 余った分を外す
+    t = now();
+    const left = [...spare.pick, ...spare.other];
+    for (const m of left) m.remove();
     T.remove = now() - t;
     if (perf.on)
-      this.pinStats = `配置 ${T.place.toFixed(1)}・使い回し ${T.reuse.toFixed(1)}・新規 ${T.create.toFixed(1)}・外す ${T.remove.toFixed(1)}（${prev.size}）`;
+      this.pinStats = `配置 ${T.place.toFixed(1)}・使い回し ${T.reuse.toFixed(1)}・移す ${T.recycle.toFixed(1)}（${fresh.length - toCreate.length}）・新規 ${T.create.toFixed(1)}・外す ${T.remove.toFixed(1)}（${left.length}）`;
     this.declutterSoon();
-    return shown;
+    return placed.length;
+  }
+
+  /** 表示中のピンとして登録する */
+  private keep(m: PinMarker, p: Placement) {
+    this.spotMarkers.set(p.key, m);
+    if (p.pick) this.pickMarkers.set(p.s.id, m);
+    else this.otherMarkers.push(m);
+  }
+
+  /** 大きさ・濃さ・重なり順を、変わったときだけ書き換える */
+  private updatePin(m: PinMarker, p: Placement) {
+    if (m.pin.z !== p.z) m.setZIndexOffset(p.z);
+    const el = m.getElement();
+    const span = (m.pin.span ??= el?.querySelector('span'));
+    if (el && span && m.pin.px !== p.px) {
+      el.style.width = el.style.height = `${p.px}px`;
+      el.style.marginLeft = el.style.marginTop = `${-p.px / 2}px`;
+      span.style.setProperty('--s', `${p.px}px`);
+    }
+    if (span && m.pin.op !== p.op) span.style.opacity = p.op;
+    m.pin.px = p.px;
+    m.pin.op = p.op;
+    m.pin.z = p.z;
+  }
+
+  /** 出ていくピンを別の場所へ移し、中身を入れ替える */
+  private recyclePin(m: PinMarker, p: Placement) {
+    const el = m.getElement();
+    const span = (m.pin.span ??= el?.querySelector('span'));
+    const label = (m.pin.label ??= el?.querySelector<HTMLElement>('.pin-label'));
+    const c = CAT[p.s.cat] ?? CAT.other;
+    m.pin.s = p.s;
+    m.setLatLng([p.s.lat, p.s.lon]);
+    if (el) el.title = p.s.name;
+    if (span) {
+      span.style.setProperty('--c', c.color);
+      if (span.textContent !== c.icon) span.textContent = c.icon;
+    }
+    if (label) label.textContent = shortName(p.s.name);
+    this.updatePin(m, p);
   }
 
   /**
