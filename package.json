@@ -1,7 +1,7 @@
 {
   "name": "dokoiko",
   "private": true,
-  "version": "0.20.9",
+  "version": "0.21.0",
   "type": "module",
   "description": "どこいこ - 子供とのお出かけ先を偶然発見する静的Webアプリ",
   "scripts": {

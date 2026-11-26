@@ -8,6 +8,7 @@ import type { SavedSpot } from './history';
 import { CAT, shortName } from './labels';
 import { h } from './dom';
 import { perf } from '../perf';
+import { PinCanvas, type CanvasPin } from './pinCanvas';
 
 /**
  * 見た目・描き方の切り替え（比較用）。URL の ?fx=3d,shadow で元の描き方に戻せる。
@@ -94,6 +95,10 @@ export class DiscoverMap {
   pinStats = '';
   /** 表示中の場所のピン（キー：ID・おすすめか）。次に表示するときに使い回す */
   private spotMarkers = new Map<string, L.Marker>();
+  /** ピンを canvas に描くレイヤー（?fx=dom のときは使わず、HTML の部品で置く） */
+  private pinCanvas?: PinCanvas;
+  /** canvas に描くイベントのピン（showEvents で作り、showSpots でまとめて描く） */
+  private canvasEvents: CanvasPin[] = [];
   /** 隠してある（次に使い回す）ピン */
   private parked = { pick: [] as PinMarker[], other: [] as PinMarker[] };
   /** 表示中のイベントのピン（キー：会場・イベント） */
@@ -122,6 +127,7 @@ export class DiscoverMap {
     this.eventLayer.addTo(this.map);
     this.hereLayer.addTo(this.map);
     this.pickLayer.addTo(this.map);
+    if (!FX.has('dom')) this.pinCanvas = new PinCanvas().addTo(this.map);
     // 連続した移動はまとめて1回だけ通知
     // 吹き出しを開いている間（自動スクロールを含む）は選び直さず、閉じたときにまとめて選び直す
     let popupOpen = false;
@@ -374,6 +380,7 @@ export class DiscoverMap {
    * @returns 表示した数
    */
   showSpots(list: RankedSpot[], popup: (s: Spot) => HTMLElement): number {
+    if (this.pinCanvas) return this.showSpotsCanvas(list, popup);
     // ピンは作り直さない：
     // ① 前と同じ場所のピンは、大きさ・濃さだけ直して使い回す
     // ② 画面から出ていくピンは、新しく入ってくる場所へ移して中身（アイコン・色・名前）を入れ替える
@@ -561,6 +568,7 @@ export class DiscoverMap {
    * イベントのピン。会場の座標が分かるものは会場ごと、分からないもの（横浜市）は区の中心にまとめる。
    */
   showEvents(hits: EventHit[], popup: (hits: EventHit[]) => HTMLElement) {
+    if (this.pinCanvas) return this.showEventsCanvas(hits, popup);
     // 前と同じ会場・同じ件数のピンは作り直さずに使い回す
     const prev = this.eventPins;
     this.eventPins = new Map();
@@ -601,6 +609,100 @@ export class DiscoverMap {
     }
     for (const m of prev.values()) m.remove();
     this.declutterSoon();
+  }
+
+  /** canvas に描く：イベントのピン（描くのは showSpotsCanvas でまとめて） */
+  private showEventsCanvas(hits: EventHit[], popup: (hits: EventHit[]) => HTMLElement) {
+    const groups = new Map<string, EventHit[]>();
+    for (const x of hits) {
+      const k = x.ev.approx ? `area:${x.ev.city}` : `${x.ev.lat.toFixed(4)},${x.ev.lon.toFixed(4)}`;
+      const a = groups.get(k);
+      if (a) a.push(x);
+      else groups.set(k, [x]);
+    }
+    this.canvasEvents = [...groups.values()].map((list) => {
+      const ev = list[0].ev;
+      const name = ev.approx ? `${ev.city.replace(/^横浜市/, '')}のイベント` : (ev.spotName ?? ev.venue ?? ev.title);
+      return {
+        lat: ev.lat,
+        lon: ev.lon,
+        r: 15,
+        z: 1500,
+        kind: 'event',
+        color: '',
+        icon: '🗓️',
+        label: name.length > 14 ? name.slice(0, 14) + '…' : name,
+        labelKind: 'e',
+        pick: false,
+        op: 1,
+        dashed: ev.approx,
+        badge: list.length > 1 ? String(list.length) : undefined,
+        popup: () => popup(list),
+        popupOptions: { maxWidth: 360, minWidth: 260, autoPan: false, className: 'event-popup' },
+      } satisfies CanvasPin;
+    });
+  }
+
+  /** canvas に描く：場所のピン（得点の高い順に、ほかのピンと重ならないものを置く） */
+  private showSpotsCanvas(list: RankedSpot[], popup: (s: Spot) => HTMLElement): number {
+    const t0 = perf.on ? performance.now() : 0;
+    this.created = 0;
+    const size = this.map.getSize();
+    const CELL = 48;
+    const grid = new Map<number, { x: number; y: number; r: number }[]>();
+    const cellKey = (cx: number, cy: number) => cx * 4096 + cy;
+    const put = (x: number, y: number, r: number) => {
+      const k = cellKey(Math.floor(x / CELL), Math.floor(y / CELL));
+      const a = grid.get(k);
+      if (a) a.push({ x, y, r });
+      else grid.set(k, [{ x, y, r }]);
+    };
+    const overlaps = (x: number, y: number, r: number) => {
+      const cx = Math.floor(x / CELL);
+      const cy = Math.floor(y / CELL);
+      for (let i = cx - 1; i <= cx + 1; i++)
+        for (let j = cy - 1; j <= cy + 1; j++)
+          for (const o of grid.get(cellKey(i, j)) ?? []) if (Math.hypot(o.x - x, o.y - y) < (o.r + r) * 0.9) return true;
+      return false;
+    };
+    for (const e of this.canvasEvents) {
+      const p = this.map.latLngToContainerPoint([e.lat, e.lon]);
+      put(p.x, p.y, 15);
+    }
+    const wmax = Math.max(1e-9, ...list.map((x) => x.w));
+    const pins: CanvasPin[] = [];
+    for (const x of list.slice(0, 800)) {
+      const { s } = x;
+      const score = Math.sqrt(x.w / wmax);
+      const px = 2 * Math.round((x.pick ? Math.max(40, 30 + 16 * score) : 20 + 18 * score) / 2);
+      const r = px / 2;
+      const pt = this.map.latLngToContainerPoint([s.lat, s.lon]);
+      if (!x.pick) {
+        if (pt.x < r || pt.y < r || pt.x > size.x - r || pt.y > size.y - r) continue;
+        if (overlaps(pt.x, pt.y, r)) continue;
+      }
+      put(pt.x, pt.y, r);
+      const c = CAT[s.cat] ?? CAT.other;
+      pins.push({
+        lat: s.lat,
+        lon: s.lon,
+        r,
+        z: Math.round(score * 1000) + (x.pick ? 2000 : 0),
+        kind: 'spot',
+        color: c.color,
+        icon: c.icon,
+        label: shortName(s.name),
+        labelKind: x.pick ? 'p' : 'o',
+        pick: x.pick,
+        op: 0.7 + 0.3 * score,
+        popup: () => popup(s),
+        popupOptions: { maxWidth: 340, minWidth: 260, autoPan: false, className: 'card-popup' },
+      });
+    }
+    const t1 = perf.on ? performance.now() : 0;
+    this.pinCanvas!.setPins([...this.canvasEvents, ...pins]);
+    if (perf.on) this.pinStats = `配置 ${(t1 - t0).toFixed(1)}・canvas に描く ${this.pinCanvas!.lastMs.toFixed(1)}`;
+    return pins.length;
   }
 
   showFound(list: SavedSpot[]) {
