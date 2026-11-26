@@ -428,3 +428,8 @@ select { flex: 1; min-width: 0; }
 
 /* ピンごとに配置の計算を閉じ込める（ピンが増減しても、ほかのピンや画面全体を計算し直さない） */
 .spot-pin, .event-pin { contain: layout style; }
+
+/* タッチ端末：ぼかした影は描画が重いので、縁取りだけにする（html.lite。?fx=shadow で無効） */
+.lite .spot-pin span, .lite .event-pin span, .lite .pin-label { box-shadow: none; }
+.lite .spot-pin.pick span { box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 30%, transparent); }
+.lite .pin-label { background: var(--paper); border-color: color-mix(in srgb, var(--ink) 25%, transparent); }

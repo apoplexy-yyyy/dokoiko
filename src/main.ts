@@ -8,7 +8,7 @@ import { $, h, safeUrl } from './ui/dom';
 import { eventItem } from './ui/events';
 import { history } from './ui/history';
 import { CAT, googleSearchUrl } from './ui/labels';
-import { BASEMAPS, DiscoverMap, type RankedSpot } from './ui/map';
+import { BASEMAPS, DiscoverMap, FX, type RankedSpot } from './ui/map';
 import { perf } from './perf';
 
 /** おすすめ（大きく、必ず表示する）の数 */
@@ -118,7 +118,7 @@ async function refresh() {
   perf.mark('ピン');
   history.addMany('seen', picks);
   perf.mark('履歴');
-  perf.end(`候補 ${spots.length}・ピン ${shown}（新規 ${map.created}）
+  perf.end(`${FX.size ? `fx=${[...FX].join(',')}｜` : ''}候補 ${spots.length}・ピン ${shown}（新規 ${map.created}）
   ピンの内訳 ${map.pinStats}`);
   if (!wide) prefetchAround(state.meta, b);
 
@@ -236,6 +236,8 @@ function setupWhen() {
 }
 
 async function init() {
+  // タッチ端末では、描画の重いぼかした影を省く（?fx=shadow で付ける）
+  if (matchMedia('(pointer: coarse)').matches && !FX.has('shadow')) document.documentElement.classList.add('lite');
   try {
     state.meta = await loadMeta();
   } catch (e) {

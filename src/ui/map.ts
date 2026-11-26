@@ -9,6 +9,29 @@ import { CAT, shortName } from './labels';
 import { h } from './dom';
 import { perf } from '../perf';
 
+/**
+ * 見た目・描き方の切り替え（比較用）。URL の ?fx=3d,shadow で元の描き方に戻せる。
+ * - 3d：Leaflet の既定（translate3d）でピンを置く。ピンごとに別の描画レイヤーになり、スマホでは描画が重い
+ * - shadow：タッチ端末でもピンとラベルにぼかした影を付ける
+ */
+export const FX = new Set(
+  typeof location === 'undefined' ? [] : (new URLSearchParams(location.search).get('fx') ?? '').split(',').filter(Boolean),
+);
+
+// ピンを 2D の translate で置く（Leaflet は translate3d を使うため、ピン100個が100枚の描画レイヤーになっていた）
+if (!FX.has('3d')) {
+  type PosMarker = { _icon?: HTMLElement; _shadow?: HTMLElement; _zIndex: number; options: L.MarkerOptions; _resetZIndex(): void };
+  (L.Marker.prototype as unknown as { _setPos(this: PosMarker, pos: L.Point): void })._setPos = function (pos) {
+    for (const el of [this._icon, this._shadow]) {
+      if (!el) continue;
+      (el as HTMLElement & { _leaflet_pos?: L.Point })._leaflet_pos = pos;
+      el.style.transform = `translate(${pos.x}px,${pos.y}px)`;
+    }
+    this._zIndex = pos.y + (this.options.zIndexOffset ?? 0);
+    this._resetZIndex();
+  };
+}
+
 /** ピンと名前ラベルの間隔（px） */
 const LABEL_GAP = 2;
 
