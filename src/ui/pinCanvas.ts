@@ -40,6 +40,8 @@ interface Placed {
 
 /** ピンとラベルの間隔（px） */
 const GAP = 2;
+/** ピンの絵を描く大きさの段階（半径）。その段階の中では縮めて使う */
+const spriteR = (r: number) => (r <= 12 ? 12 : r <= 17 ? 17 : 24);
 /** canvas を画面より広く取る幅（px） */
 const PAD = 80;
 const LABEL_MAX = 180;
@@ -64,6 +66,9 @@ export class PinCanvas extends L.Layer {
   private origin = L.point(0, 0);
   /** 直近の描画にかかった時間（計測用） */
   lastMs = 0;
+  /** 直近の描画の内訳（計測用） */
+  breakdown = '';
+  private newSprites = 0;
 
   onAdd(map: L.Map) {
     const pane = map.getPane('pinPane') ?? map.createPane('pinPane');
@@ -77,12 +82,21 @@ export class PinCanvas extends L.Layer {
     map.on('zoomanim', this.animateZoom, this);
     map.on('click', this.onClick, this);
     map.on('mousemove', this.onHover, this);
-    // Web フォントが読み込まれたら、ラベルの幅を測り直して描き直す（先に代わりのフォントで測ると幅がずれる）
-    document.fonts?.ready.then(() => {
+    // Web フォントが（文字のまとまりごとに）読み込まれたら、ラベルの幅を測り直して描き直す。
+    // 日本語の Web フォントは使う文字ごとに後から読み込まれ、そのたびに幅が変わるため。
+    // 毎回測り直すとスマホでは数十 ms かかるので、読み込まれたときだけにする
+    const refit = () => {
       this.texts.clear();
+      this.redraw();
+    };
+    document.fonts?.ready.then(refit);
+    // ライト／ダークが切り替わったら色を読み直す
+    matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => {
+      this.theme = undefined;
       this.sprites.clear();
       this.redraw();
     });
+    document.fonts?.addEventListener?.('loadingdone', refit);
     this.redraw();
     return this;
   }
@@ -129,10 +143,11 @@ export class PinCanvas extends L.Layer {
       this.canvas.style.height = `${chh}px`;
     }
     this.drawnBounds = L.latLngBounds(map.containerPointToLatLng([-PAD, size.y + PAD]), map.containerPointToLatLng([size.x + PAD, -PAD]));
-    this.theme = readTheme();
-    // ラベルの幅は描くたびに測り直す（日本語の Web フォントは文字ごとに後から読み込まれ、幅が変わるため）
-    this.texts.clear();
+    // 色・フォントは覚えておく（毎回ページから読むと、スマホではスタイルの計算し直しが起きることがある）
+    this.theme ??= readTheme();
+    const tLayout = performance.now();
     this.layout(size);
+    const tPins = performance.now();
     const ctx = this.ctx;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, size.x + PAD * 2, size.y + PAD * 2);
@@ -140,11 +155,19 @@ export class PinCanvas extends L.Layer {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     // 重なり順の低いものから描く（ピンとそのラベルは一緒に）
+    let labelMs = 0;
     for (const p of [...this.placed].sort((a, b) => a.pin.z - b.pin.z)) {
       this.drawPin(p, dpr);
-      if (p.lb) this.drawLabel(p);
+      if (p.lb) {
+        const t = performance.now();
+        this.drawLabel(p);
+        labelMs += performance.now() - t;
+      }
     }
-    this.lastMs = performance.now() - t0;
+    const tEnd = performance.now();
+    this.lastMs = tEnd - t0;
+    this.breakdown = `準備 ${(tLayout - t0).toFixed(1)}・位置とラベルの幅 ${(tPins - tLayout).toFixed(1)}・ピン ${(tEnd - tPins - labelMs).toFixed(1)}・ラベル ${labelMs.toFixed(1)}（${this.placed.filter((p) => p.lb).length}）・新しい絵 ${this.newSprites}`;
+    this.newSprites = 0;
   }
 
   /** 位置と、ラベルを右・左のどちらに出すか（どちらも重なるなら出さない）を決める */
@@ -188,7 +211,8 @@ export class PinCanvas extends L.Layer {
   private drawPin(p: Placed, dpr: number) {
     const ctx = this.ctx;
     const sprite = this.sprite(p.pin, dpr);
-    const s = sprite.width / dpr;
+    // 絵は大きさの段階ごとに1枚なので、実際の大きさに縮めて貼る
+    const s = (sprite.width / dpr) * (p.pin.r / spriteR(p.pin.r));
     ctx.globalAlpha = p.pin.op;
     ctx.drawImage(sprite, p.x - s / 2, p.y - s / 2, s, s);
     ctx.globalAlpha = 1;
@@ -212,14 +236,18 @@ export class PinCanvas extends L.Layer {
     }
   }
 
-  /** ピンの絵（種類・大きさごとに1回だけ描いて覚える） */
+  /**
+   * ピンの絵。種類ごと・大きさの段階（3段階）ごとに1回だけ、その段階の最大の大きさで描いて覚える。
+   * 大きさを 1px 刻みで描き分けると絵の数が多くなり、絵文字を描くのがスマホでは1枚 数ms かかるため
+   */
   private sprite(pin: CanvasPin, dpr: number): HTMLCanvasElement {
     const th = this.theme!;
-    const key = `${pin.kind}|${pin.icon}|${pin.color}|${pin.r}|${pin.pick ? 1 : 0}|${pin.dashed ? 1 : 0}|${dpr}|${th.paper}|${th.accent}`;
+    const R = spriteR(pin.r);
+    const key = `${pin.kind}|${pin.icon}|${pin.color}|${R}|${pin.pick ? 1 : 0}|${pin.dashed ? 1 : 0}|${dpr}|${th.paper}|${th.accent}`;
     let c = this.sprites.get(key);
     if (c) return c;
     const ring = pin.pick ? 4 : 0;
-    const s = pin.r * 2 + ring * 2 + 2;
+    const s = R * 2 + ring * 2 + 2;
     c = document.createElement('canvas');
     c.width = c.height = Math.ceil(s * dpr);
     const g = c.getContext('2d')!;
@@ -228,13 +256,13 @@ export class PinCanvas extends L.Layer {
     if (ring) {
       // おすすめは外側に薄い輪
       g.beginPath();
-      g.arc(m, m, pin.r + ring, 0, Math.PI * 2);
+      g.arc(m, m, R + ring, 0, Math.PI * 2);
       g.fillStyle = withAlpha(pin.color, 0.3);
       g.fill();
     }
     const bw = pin.kind === 'event' ? 2 : pin.pick ? 3 : 2;
     g.beginPath();
-    g.arc(m, m, pin.r - bw / 2, 0, Math.PI * 2);
+    g.arc(m, m, R - bw / 2, 0, Math.PI * 2);
     g.fillStyle = th.paper;
     g.fill();
     if (pin.pick) {
@@ -248,11 +276,12 @@ export class PinCanvas extends L.Layer {
     g.setLineDash([]);
     // 絵文字は塗りの透明度を受け継ぐので、不透明にしてから描く
     g.fillStyle = '#000';
-    g.font = `${pin.kind === 'event' ? 15 : Math.round(pin.r)}px ${th.font}`;
+    g.font = `${pin.kind === 'event' ? 15 : Math.round(R)}px ${th.font}`;
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     g.fillText(pin.icon, m, m + 1);
     this.sprites.set(key, c);
+    this.newSprites++;
     return c;
   }
 

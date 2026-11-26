@@ -701,7 +701,8 @@ export class DiscoverMap {
     }
     const t1 = perf.on ? performance.now() : 0;
     this.pinCanvas!.setPins([...this.canvasEvents, ...pins]);
-    if (perf.on) this.pinStats = `配置 ${(t1 - t0).toFixed(1)}・canvas に描く ${this.pinCanvas!.lastMs.toFixed(1)}`;
+    if (perf.on) this.pinStats = `配置 ${(t1 - t0).toFixed(1)}・canvas に描く ${this.pinCanvas!.lastMs.toFixed(1)}
+  canvas の内訳 ${this.pinCanvas!.breakdown}`;
     return pins.length;
   }
 
