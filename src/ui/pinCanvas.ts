@@ -79,31 +79,29 @@ export class PinCanvas extends L.Layer {
     // 地図を動かしている間・止めた後は canvas が地図と一緒に動くので描き直さない（新しいピンが来たら描く）。
     // 拡大・縮小の後と、大きさが変わったときだけ描き直す
     map.on('zoomend viewreset resize', this.redraw, this);
+    map.on('zoomend', this.onZoomEnd, this);
     map.on('zoomanim', this.animateZoom, this);
+    map.on('zoomstart', this.onZoomStart, this);
     map.on('click', this.onClick, this);
     map.on('mousemove', this.onHover, this);
-    // Web フォントが（文字のまとまりごとに）読み込まれたら、ラベルの幅を測り直して描き直す。
-    // 日本語の Web フォントは使う文字ごとに後から読み込まれ、そのたびに幅が変わるため。
-    // 毎回測り直すとスマホでは数十 ms かかるので、読み込まれたときだけにする
-    const refit = () => {
-      this.texts.clear();
-      this.redraw();
-    };
-    document.fonts?.ready.then(refit);
+    // 日本語の Web フォントは使う文字ごとに後から読み込まれ、幅が変わる。
+    // 読み込み済みの文字のラベルだけ幅を覚え、残りは描くたびに測る（全部を毎回測るとスマホで数十 ms かかる）
+    document.fonts?.ready.then(() => this.redraw());
     // ライト／ダークが切り替わったら色を読み直す
     matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => {
       this.theme = undefined;
       this.sprites.clear();
       this.redraw();
     });
-    document.fonts?.addEventListener?.('loadingdone', refit);
     this.redraw();
     return this;
   }
 
   onRemove(map: L.Map) {
     map.off('zoomend viewreset resize', this.redraw, this);
+    map.off('zoomend', this.onZoomEnd, this);
     map.off('zoomanim', this.animateZoom, this);
+    map.off('zoomstart', this.onZoomStart, this);
     map.off('click', this.onClick, this);
     map.off('mousemove', this.onHover, this);
     this.canvas.remove();
@@ -113,6 +111,19 @@ export class PinCanvas extends L.Layer {
   /** 描くピンを差し替える */
   setPins(pins: CanvasPin[]) {
     this.pins = pins;
+    this.hideLabels = false;
+    clearTimeout(this.showLabelsTimer);
+    this.redraw();
+  }
+
+  /**
+   * 拡大・縮小の間は名前ラベルを出さない（canvas ごと拡大縮小するので、ラベルがピンからずれて見えるため）。
+   * 新しいピンが来たら（setPins）出す。来ないとき（吹き出しを開いている間など）に備えて、少し後にも出す
+   */
+  private hideLabels = false;
+  private showLabelsTimer = 0;
+  private onZoomStart() {
+    this.hideLabels = true;
     this.redraw();
   }
 
@@ -158,7 +169,7 @@ export class PinCanvas extends L.Layer {
     let labelMs = 0;
     for (const p of [...this.placed].sort((a, b) => a.pin.z - b.pin.z)) {
       this.drawPin(p, dpr);
-      if (p.lb) {
+      if (p.lb && !this.hideLabels) {
         const t = performance.now();
         this.drawLabel(p);
         labelMs += performance.now() - t;
@@ -321,8 +332,18 @@ export class PinCanvas extends L.Layer {
       w = ctx.measureText(text).width + padX;
     }
     v = { text, w: Math.ceil(w) };
-    this.texts.set(key, v);
+    // その文字の Web フォントが読み込み済みのときだけ覚える（読み込み前は代わりのフォントの幅なので、次に描くとき測り直す）
+    if (!document.fonts || document.fonts.check(font, pin.label)) this.texts.set(key, v);
     return v;
+  }
+
+  private onZoomEnd() {
+    clearTimeout(this.showLabelsTimer);
+    this.showLabelsTimer = window.setTimeout(() => {
+      if (!this.hideLabels) return;
+      this.hideLabels = false;
+      this.redraw();
+    }, 800);
   }
 
   /** 拡大・縮小のアニメーション中は、描いた絵ごと拡大縮小する */
