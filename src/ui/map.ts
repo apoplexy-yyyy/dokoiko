@@ -21,6 +21,9 @@ function pinHtml(icon: HTMLElement, label: string, cls: string): HTMLElement {
   return h('div', { class: 'pin-in' }, icon, h('b', { class: `pin-label ${cls}`.trim() }, label));
 }
 
+/** 今の大きさ・濃さ・重なり順を覚えておくピン（変わったときだけ書き換える） */
+type PinMarker = L.Marker & { pin: { px: number; op: string; z: number } };
+
 export interface RankedSpot {
   s: Spot;
   /** 重み（得点） */
@@ -47,7 +50,9 @@ export class DiscoverMap {
   private pickMarkers = new Map<string, L.Marker>();
   private otherLayer = L.layerGroup();
   private otherMarkers: L.Marker[] = [];
-  /** 表示中の場所のピン（キー：ID・おすすめか・大きさ）。次に表示するときに使い回す */
+  /** 直近の showSpots で新しく作ったピンの数（計測用） */
+  created = 0;
+  /** 表示中の場所のピン（キー：ID・おすすめか）。次に表示するときに使い回す */
   private spotMarkers = new Map<string, L.Marker>();
   /** 表示中のイベントのピン（キー：会場・イベント） */
   private eventPins = new Map<string, L.Marker>();
@@ -280,6 +285,7 @@ export class DiscoverMap {
     // 地図を少し動かしただけなら大半のピンは前と同じなので、作り直さずに使い回す（変わった分だけ足し引きする）
     const prev = this.spotMarkers;
     this.spotMarkers = new Map();
+    this.created = 0;
     this.pickMarkers.clear();
     this.otherMarkers = [];
     const size = this.map.getSize();
@@ -292,7 +298,6 @@ export class DiscoverMap {
     for (const x of list.slice(0, 800)) {
       const { s } = x;
       const score = Math.sqrt(x.w / wmax); // 0〜1
-      // 大きさは 2px 刻み（1px の違いで作り直さないように）
       const px = 2 * Math.round((x.pick ? Math.max(40, 30 + 16 * score) : 20 + 18 * score) / 2);
       const r = px / 2;
       const pt = this.map.latLngToContainerPoint([s.lat, s.lon]);
@@ -303,13 +308,21 @@ export class DiscoverMap {
       taken.push({ pt, r });
       const opacity = (0.7 + 0.3 * score).toFixed(2);
       const zIndex = Math.round(score * 1000) + (x.pick ? 2000 : 0);
-      const key = `${s.id}|${x.pick ? 1 : 0}|${px}`;
-      let m = prev.get(key);
+      // 大きさ・濃さが変わっても作り直さず、その場で直す（地図を動かすと一番高い得点が変わり、ほぼ全部の大きさが変わるため）
+      const key = `${s.id}|${x.pick ? 1 : 0}`;
+      let m = prev.get(key) as PinMarker | undefined;
       if (m) {
         prev.delete(key);
-        m.setZIndexOffset(zIndex);
-        const span = m.getElement()?.querySelector('span');
-        if (span) span.style.opacity = opacity;
+        if (m.pin.z !== zIndex) m.setZIndexOffset(zIndex);
+        const el = m.getElement();
+        const span = el?.querySelector('span');
+        if (el && span && m.pin.px !== px) {
+          el.style.width = el.style.height = `${px}px`;
+          el.style.marginLeft = el.style.marginTop = `${-r}px`;
+          span.style.setProperty('--s', `${px}px`);
+        }
+        if (span && m.pin.op !== opacity) span.style.opacity = opacity;
+        m.pin = { px, op: opacity, z: zIndex };
       } else {
         const c = CAT[s.cat] ?? CAT.other;
         const mk = L.marker([s.lat, s.lon], {
@@ -322,10 +335,12 @@ export class DiscoverMap {
           title: s.name,
           riseOnHover: true,
           zIndexOffset: zIndex,
-        });
+        }) as PinMarker;
+        mk.pin = { px, op: opacity, z: zIndex };
         mk.bindPopup(() => popup(s), { maxWidth: 340, minWidth: 260, autoPan: false, className: 'card-popup' });
         mk.addTo(x.pick ? this.pickLayer : this.otherLayer);
         m = mk;
+        this.created++;
       }
       this.spotMarkers.set(key, m);
       if (x.pick) this.pickMarkers.set(s.id, m);

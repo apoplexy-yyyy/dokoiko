@@ -62,3 +62,23 @@ export async function loadBounds(meta: Meta, b: Bounds): Promise<Spot[]> {
   const lists = await Promise.all(keys.map(loadTile));
   return lists.flat();
 }
+
+/**
+ * 表示範囲のまわり（1タイル分）を、手が空いたときに先読みしておく。
+ * 次に地図を動かしたときに通信を待たずに済む（スマホでは初回の読み込みに 200ms ほどかかるため）
+ */
+export function prefetchAround(meta: Meta, b: Bounds): void {
+  const s = meta.tileSize;
+  const have = new Set(meta.tiles);
+  const keys: string[] = [];
+  for (let y = Math.floor(b.south / s) - 1; y <= Math.floor(b.north / s) + 1; y++)
+    for (let x = Math.floor(b.west / s) - 1; x <= Math.floor(b.east / s) + 1; x++) {
+      const k = `${x}_${y}`;
+      if (have.has(k) && !tileCache.has(k)) keys.push(k);
+    }
+  if (!keys.length) return;
+  const ric = (window as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
+  const run = () => keys.slice(0, 16).forEach(loadTile);
+  if (ric) ric(run, { timeout: 2000 });
+  else setTimeout(run, 500);
+}

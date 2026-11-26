@@ -1,5 +1,5 @@
 import './styles.css';
-import { DETAIL_ZOOM, loadBounds, loadEvents, loadHighlights, loadMeta, loadNews } from './data/loader';
+import { DETAIL_ZOOM, loadBounds, loadEvents, loadHighlights, loadMeta, loadNews, prefetchAround } from './data/loader';
 import { eventsInView, WHEN_LABEL, whenDays, type EventHit, type When } from './discover/events';
 import { rankInView, todaySeed } from './discover/pick';
 import type { EventsData, Meta, NewsData, NewsItem, Spot } from './types';
@@ -118,7 +118,8 @@ async function refresh() {
   perf.mark('ピン');
   history.addMany('seen', picks);
   perf.mark('履歴');
-  perf.end(`候補 ${spots.length}・ピン ${shown}`);
+  perf.end(`候補 ${spots.length}・ピン ${shown}（新規 ${map.created}）`);
+  if (!wide) prefetchAround(state.meta, b);
 
 }
 
