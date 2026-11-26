@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { osmClosure, pageClosure, webClosure, wikidataClosure, pastClosure, wikipediaClosure } from '../scripts/lib/closed';
+import { manualClosure, osmClosure, pageClosure, pastClosure, webClosure, wikidataClosure, wikipediaClosure } from '../scripts/lib/closed';
 
 describe('閉館・閉業の判定', () => {
   it('公式サイトの閉館のお知らせを見つける', () => {
@@ -59,5 +59,16 @@ describe('説明文の過去形（〜にあった施設）', () => {
     expect(pastClosure(['海軍工廠にあった建物を移築した記念館'], 'museum', true)).toBeUndefined();
     expect(pastClosure(['横浜市にあった競馬場の跡の公園'], 'park', true)).toBeUndefined();
     expect(pastClosure(['横浜市にある水族館'], 'water', true)).toBeUndefined();
+  });
+});
+
+describe('手で登録した閉館', () => {
+  const list = [{ name: 'UWS アクアリウム アンダーウォータースペース', id: 'n1', lat: 35.45445, lon: 139.63779, ended: '2024-01-15', source: 'https://example.com' }];
+  it('同じ ID、または同じ名前で近くのものを消す', () => {
+    expect(manualClosure({ id: 'n1', name: '別名', lat: 0, lon: 0 }, list)?.level).toBe('closed');
+    expect(manualClosure({ id: 'o9', name: 'UWS アクアリウム アンダーウォータースペース', lat: 35.455, lon: 139.638 }, list)?.level).toBe('closed');
+  });
+  it('名前が同じでも遠くのものは消さない', () => {
+    expect(manualClosure({ id: 'o9', name: 'UWS アクアリウム アンダーウォータースペース', lat: 35.6, lon: 139.8 }, list)).toBeUndefined();
   });
 });

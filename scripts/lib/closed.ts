@@ -2,6 +2,9 @@
 // - closed：はっきり閉館・廃止している → 地図から消す
 // - suspect：疑いがある → 得点を下げ、理由を吹き出しに書く
 
+import { distKm } from '../../src/discover/pick.ts';
+import { normName } from './name.ts';
+
 export interface Closure {
   level: 'closed' | 'suspect';
   /** 吹き出しに出す理由 */
@@ -132,3 +135,23 @@ export const deadLink = (c: WebCheck | undefined) => c?.st === 'dns' || c?.st ==
 
 /** 疑いのあるスポットの得点（行く価値）に掛ける係数 */
 export const SUSPECT_FACTOR = 0.35;
+
+/** 閉館を確認したが元のデータに反映されていない施設（config/closed.json） */
+export interface ManualClosed {
+  name: string;
+  id?: string;
+  lat: number;
+  lon: number;
+  ended: string;
+  source: string;
+}
+
+/** 手で登録した閉館：同じ ID、または同じ名前で 1km 以内 */
+export function manualClosure(s: { id: string; name: string; lat: number; lon: number; wd?: string }, list: ManualClosed[]): Closure | undefined {
+  const key = normName(s.name);
+  for (const c of list) {
+    if ((c.id && (c.id === s.id || c.id === s.wd)) || (normName(c.name) === key && distKm(s.lat, s.lon, c.lat, c.lon) <= 1))
+      return { level: 'closed', why: `${c.ended} 閉館（${c.source}）` };
+  }
+  return undefined;
+}

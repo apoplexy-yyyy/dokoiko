@@ -3,6 +3,7 @@ import { readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import region from '../config/region.json' with { type: 'json' };
 import feeds from '../config/feeds.json' with { type: 'json' };
+import manualClosed from '../config/closed.json' with { type: 'json' };
 import { isMain, readWork, writeJson, writeWork } from './lib/work.ts';
 import { PointIndex, dedupe, matchNews, toSpot } from './lib/score.ts';
 import { computeIdf } from './lib/terms.ts';
@@ -19,7 +20,7 @@ import type { PrefKids, PrefVisitors } from './collect-pref.ts';
 import type { GbifObs } from './collect-gbif.ts';
 import { applyVisitors, gbifSpots, mergeOverture, mergePrefKids, mergeWikidata } from './lib/merge.ts';
 import type { WdSpot } from './collect-wikidata.ts';
-import { SUSPECT_FACTOR, deadLink, osmClosure, pastClosure, webClosure, wikidataClosure, wikipediaClosure, type Closure, type WebCheck } from './lib/closed.ts';
+import { SUSPECT_FACTOR, deadLink, manualClosure, osmClosure, pastClosure, webClosure, wikidataClosure, wikipediaClosure, type Closure, type WebCheck } from './lib/closed.ts';
 import { loadCityOf } from './lib/cities.ts';
 import type { Famous } from './lib/fake.ts';
 import { normName } from './lib/name.ts';
@@ -112,6 +113,12 @@ export async function buildData() {
   }
   console.log('[build] 追加した情報源', extra);
   if (fakes.length) console.log(`[build] 有名な施設の名前を借りた場所を除外 ${fakes.length} 件:\n  ${fakes.join('\n  ')}`);
+
+  // 閉館を確認したが元のデータに反映されていない施設（config/closed.json）
+  for (let i = spots.length - 1; i >= 0; i--) {
+    const c = manualClosure(spots[i], manualClosed.closed);
+    if (c) removed.push(...spots.splice(i, 1).map((x) => `${x.name}（${c.why}）`));
+  }
 
   // 説明文が「〜にあった施設」と過去形のもの：自身の説明文なら消し、そうでなければ疑いにする
   for (let i = spots.length - 1; i >= 0; i--) {
