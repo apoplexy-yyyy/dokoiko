@@ -32,6 +32,9 @@ if (!FX.has('3d')) {
   };
 }
 
+/** 隠しておくピンの上限（おすすめ・それ以外それぞれ） */
+const MAX_PARKED = 120;
+
 /** ピンと名前ラベルの間隔（px） */
 const LABEL_GAP = 2;
 
@@ -91,6 +94,8 @@ export class DiscoverMap {
   pinStats = '';
   /** 表示中の場所のピン（キー：ID・おすすめか）。次に表示するときに使い回す */
   private spotMarkers = new Map<string, L.Marker>();
+  /** 隠してある（次に使い回す）ピン */
+  private parked = { pick: [] as PinMarker[], other: [] as PinMarker[] };
   /** 表示中のイベントのピン（キー：会場・イベント） */
   private eventPins = new Map<string, L.Marker>();
   private timer = 0;
@@ -448,7 +453,8 @@ export class DiscoverMap {
 
     // ② 出ていくピンを入ってくる場所へ移す（おすすめかどうかが同じもの同士）
     t = now();
-    const spare = { pick: [] as PinMarker[], other: [] as PinMarker[] };
+    // 前回隠しておいたピンも使う
+    const spare = this.parked;
     for (const m of prev.values()) spare[m.pin.pick ? 'pick' : 'other'].push(m);
     const toCreate: Placement[] = [];
     for (const p of fresh) {
@@ -458,6 +464,7 @@ export class DiscoverMap {
         continue;
       }
       this.recyclePin(m, p);
+      m.getElement()?.classList.remove('parked');
       this.keep(m, p);
     }
     T.recycle = now() - t;
@@ -487,13 +494,25 @@ export class DiscoverMap {
     }
     T.create = now() - t;
 
-    // 余った分を外す
+    // 余った分は外さずに隠しておき、次に地図を動かしたときに使う（外すのもスマホで1個 0.3ms ほどかかるため）。
+    // 多すぎる分だけ外す
     t = now();
-    const left = [...spare.pick, ...spare.other];
-    for (const m of left) m.remove();
+    let parked = 0;
+    for (const k of ['pick', 'other'] as const) {
+      const list = spare[k];
+      while (list.length > MAX_PARKED) list.pop()!.remove();
+      for (const m of list) {
+        const el = m.getElement();
+        if (el && !el.classList.contains('parked')) {
+          el.classList.add('parked');
+          parked++;
+        }
+      }
+    }
+    const left = { length: parked };
     T.remove = now() - t;
     if (perf.on)
-      this.pinStats = `配置 ${T.place.toFixed(1)}・使い回し ${T.reuse.toFixed(1)}・移す ${T.recycle.toFixed(1)}（${fresh.length - toCreate.length}）・新規 ${T.create.toFixed(1)}・外す ${T.remove.toFixed(1)}（${left.length}）`;
+      this.pinStats = `配置 ${T.place.toFixed(1)}・使い回し ${T.reuse.toFixed(1)}・移す ${T.recycle.toFixed(1)}（${fresh.length - toCreate.length}）・新規 ${T.create.toFixed(1)}・隠す ${T.remove.toFixed(1)}（${left.length}）`;
     this.declutterSoon();
     return placed.length;
   }

@@ -70,6 +70,22 @@ export function hash01(s: string): number {
   return ((h >>> 0) + 0.5) / 4294967296;
 }
 
+/** 「日付＋場所」の乱数の対数。同じ日は変わらないので覚えておく（地図を動かすたびに数百件計算し直さない） */
+const randCache = new Map<string, number>();
+let randSeed = '';
+function logRand(seed: string, id: string): number {
+  if (seed !== randSeed) {
+    randCache.clear();
+    randSeed = seed;
+  }
+  let v = randCache.get(id);
+  if (v === undefined) {
+    v = Math.log(hash01(seed + ':' + id));
+    randCache.set(id, v);
+  }
+  return v;
+}
+
 export const inBounds = (s: Spot, b: Bounds) => s.lat >= b.south && s.lat <= b.north && s.lon >= b.west && s.lon <= b.east;
 
 export interface AreaKeyword {
@@ -127,7 +143,7 @@ export function rankInView(
     let w = weight(s, opts);
     if (useTfIdf) w *= Math.pow(0.05 + 0.95 * (score.get(s.id) ?? 0), opts.tfidfPower ?? 1);
     if (w <= 0) continue;
-    pool.push({ s, w, key: Math.log(hash01(opts.seed + ':' + s.id)) / w, g: groupOf.get(s.cat) ?? 'fun' });
+    pool.push({ s, w, key: logRand(opts.seed, s.id) / w, g: groupOf.get(s.cat) ?? 'fun' });
   }
   const total = pool.length;
   if (opts.rainy) {
@@ -136,7 +152,11 @@ export function rankInView(
   }
 
   const byGroup = new Map<string, typeof pool>();
-  for (const x of pool) byGroup.set(x.g, [...(byGroup.get(x.g) ?? []), x]);
+  for (const x of pool) {
+    const a = byGroup.get(x.g);
+    if (a) a.push(x);
+    else byGroup.set(x.g, [x]);
+  }
   const lanes = [...byGroup].map(([g, list]) => {
     const sum = list.reduce((a, x) => a + x.w, 0);
     return { g, list: list.sort((a, b) => b.key - a.key), quota: (GROUPS[g]?.share ?? 0.1) * Math.min(1, sum / GROUP_REF), used: 0 };

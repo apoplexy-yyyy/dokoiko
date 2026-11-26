@@ -433,3 +433,6 @@ select { flex: 1; min-width: 0; }
 .lite .spot-pin span, .lite .event-pin span, .lite .pin-label { box-shadow: none; }
 .lite .spot-pin.pick span { box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 30%, transparent); }
 .lite .pin-label { background: var(--paper); border-color: color-mix(in srgb, var(--ink) 25%, transparent); }
+
+/* 隠してある（次に使い回す）ピン */
+.leaflet-marker-icon.parked { display: none; }
