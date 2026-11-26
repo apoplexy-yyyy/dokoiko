@@ -97,7 +97,7 @@ export async function buildData() {
   const famous = await readWork<Famous[]>('wd-famous.json', []);
   const extra = {
     prefKids: mergePrefKids(spots, await readWork<PrefKids[]>('pref-kids.json', []), near),
-    overture: mergeOverture(spots, await readWork<OvertureSpot[]>('overture.json', []), near, famous, fakes),
+    overture: mergeOverture(spots, await readWork<OvertureSpot[]>('overture.json', []), near, famous, fakes, await readWork<[number, number][]>('coast.json', [])),
     gbif: 0,
     wikidata: 0,
     visitors: applyVisitors(spots, await readWork<PrefVisitors[]>('pref-visitors.json', [])),
@@ -112,7 +112,7 @@ export async function buildData() {
     extra.gbif = g.length;
   }
   console.log('[build] 追加した情報源', extra);
-  if (fakes.length) console.log(`[build] 有名な施設の名前を借りた場所を除外 ${fakes.length} 件:\n  ${fakes.join('\n  ')}`);
+  if (fakes.length) console.log(`[build] 実在しない・場所が違う場所を除外 ${fakes.length} 件:\n  ${fakes.join('\n  ')}`);
 
   // 閉館を確認したが元のデータに反映されていない施設（config/closed.json）
   for (let i = spots.length - 1; i >= 0; i--) {

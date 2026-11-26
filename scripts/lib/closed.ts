@@ -142,7 +142,9 @@ export interface ManualClosed {
   id?: string;
   lat: number;
   lon: number;
-  ended: string;
+  /** 閉館日（分からなければ省略） */
+  ended?: string;
+  /** 根拠（URL、または「利用者からの報告」など） */
   source: string;
 }
 
@@ -151,7 +153,7 @@ export function manualClosure(s: { id: string; name: string; lat: number; lon: n
   const key = normName(s.name);
   for (const c of list) {
     if ((c.id && (c.id === s.id || c.id === s.wd)) || (normName(c.name) === key && distKm(s.lat, s.lon, c.lat, c.lon) <= 1))
-      return { level: 'closed', why: `${c.ended} 閉館（${c.source}）` };
+      return { level: 'closed', why: `${c.ended ? c.ended + ' ' : ''}閉館（${c.source}）` };
   }
   return undefined;
 }

@@ -1,6 +1,6 @@
 // OSM 以外の情報源（Overture・神奈川県・GBIF）を、OSM 由来のスポットに統合する
 import { distKm } from '../../src/discover/pick.ts';
-import { misplacedFamous, type Famous } from './fake.ts';
+import { COAST_KM, coastDistKm, misplacedFamous, type Famous } from './fake.ts';
 import { normName } from './name.ts';
 export { normName };
 import type { Spot } from '../../src/types.ts';
@@ -89,7 +89,14 @@ export function mergePrefKids(spots: Spot[], kids: PrefKids[], near: Near): numb
 }
 
 /** Overture：OSM に無い施設だけを追加する（近くに同じ名前があれば URL だけ補う） */
-export function mergeOverture(spots: Spot[], ov: OvertureSpot[], near: Near, famous: Famous[] = [], dropped: string[] = []): number {
+export function mergeOverture(
+  spots: Spot[],
+  ov: OvertureSpot[],
+  near: Near,
+  famous: Famous[] = [],
+  dropped: string[] = [],
+  coast: [number, number][] = [],
+): number {
   let added = 0;
   for (const o of ov) {
     // Overture は座標が数百mずれることがあるので、少し広めに同じ名前を探す
@@ -103,6 +110,14 @@ export function mergeOverture(spots: Spot[], ov: OvertureSpot[], near: Near, fam
     if (f) {
       dropped.push(`${o.name}（${o.city}。本物の「${f.name}」は遠く）`);
       continue;
+    }
+    // 砂浜・海水浴場なのに海から遠い場所（「湘南 鵠沼海岸」が横浜市南区にあるなど）は入れない
+    if (o.tags.natural === 'beach' || o.tags.leisure === 'beach_resort') {
+      const d = coastDistKm(o.lat, o.lon, coast);
+      if (d > COAST_KM) {
+        dropped.push(`${o.name}（${o.city}。海から ${d.toFixed(1)}km）`);
+        continue;
+      }
     }
     const n = toSpot({ id: o.id, lat: o.lat, lon: o.lon, city: o.city, tags: o.tags }, { website: o.web }, near);
     if (!n) continue;

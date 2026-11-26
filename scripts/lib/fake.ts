@@ -48,7 +48,7 @@ function sameFamous(key: string, f: Famous): boolean {
 /** 施設の種類を表す名前の終わり（照合用の表記で） */
 const GENERIC = new RegExp(
   '(' +
-    ['こども', '子ども', '子供', '動物園', '水族館', '植物園', '美術館', '博物館', '資料館', '記念館', '科学館', '植物館', '温室', '文学館', 'ミュージアム', 'アクアリウム', 'パーク', 'ランド', '遊園地', 'センター', '公園']
+    ['こども', '子ども', '子供', '動物園', '水族館', '植物園', '美術館', '博物館', '資料館', '記念館', '科学館', '植物館', '温室', '文学館', 'ミュージアム', 'アクアリウム', 'パーク', 'ランド', '遊園地', 'センター', '公園', '海水浴場', '海岸', 'ビーチ', '浜', '湖']
       .map(fameKey)
       .join('|') +
     ')+$',
@@ -67,4 +67,17 @@ export function misplacedFamous(name: string, lat: number, lon: number, famous: 
     far ??= f;
   }
   return far;
+}
+
+/** 砂浜・海水浴場なのに、海岸線からこれより遠い（km）なら場所が違うとみなす */
+export const COAST_KM = 1;
+
+/** 海岸線（150m おきの点）から最も近い点までの距離（km）。海岸線のデータが無ければ 0 */
+export function coastDistKm(lat: number, lon: number, coast: [number, number][]): number {
+  let min = coast.length ? Infinity : 0;
+  for (const [a, b] of coast) {
+    if (Math.abs(a - lat) > 0.2 || Math.abs(b - lon) > 0.25) continue;
+    min = Math.min(min, distKm(lat, lon, a, b));
+  }
+  return min;
 }

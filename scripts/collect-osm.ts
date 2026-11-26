@@ -13,7 +13,7 @@ const ENDPOINTS = [
 
 type LatLon = { lat: number; lon: number };
 
-interface OsmElement {
+export interface OsmElement {
   type: 'node' | 'way' | 'relation';
   id: number;
   lat?: number;
@@ -22,6 +22,7 @@ interface OsmElement {
   bounds?: { minlat: number; minlon: number; maxlat: number; maxlon: number };
   tags?: Record<string, string>;
   members?: { type: string; role: string; geometry?: LatLon[] }[];
+  geometry?: LatLon[];
 }
 
 export interface RawSpot {
@@ -67,7 +68,7 @@ export function buildFilters(area: string): string {
   ].join('\n  ');
 }
 
-async function overpass(query: string, minElements = 1): Promise<OsmElement[]> {
+export async function overpass(query: string, minElements = 1): Promise<OsmElement[]> {
   let lastErr: unknown;
   for (const ep of ENDPOINTS) {
     try {

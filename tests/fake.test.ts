@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fameKey, misplacedFamous, type Famous } from '../scripts/lib/fake';
+import { COAST_KM, coastDistKm, fameKey, misplacedFamous, type Famous } from '../scripts/lib/fake';
 
 const famous: Famous[] = [
   { q: 'Q1', name: '東京ディズニーランド', lat: 35.6328, lon: 139.8806, sitelinks: 40 },
@@ -37,5 +37,17 @@ describe('有名な施設の名前を借りた場所', () => {
     expect(misplacedFamous('こども動物園', ...KAWASAKI, famous)).toBeUndefined();
     expect(misplacedFamous('水族館', ...KAWASAKI, famous)).toBeUndefined();
     expect(misplacedFamous('熱帯植物館', 35.2491, 139.0454, famous)).toBeUndefined(); // 強羅公園の温室
+  });
+});
+
+describe('海から遠い砂浜', () => {
+  // 鵠沼海岸付近の海岸線
+  const coast: [number, number][] = [[35.316, 139.47], [35.317, 139.475], [35.318, 139.48]];
+  it('海岸線からの距離を測る', () => {
+    expect(coastDistKm(35.3165, 139.475, coast)).toBeLessThan(0.1);
+    expect(coastDistKm(35.42, 139.6, coast)).toBeGreaterThan(COAST_KM); // 横浜市南区あたり
+  });
+  it('海岸線のデータが無ければ判定しない', () => {
+    expect(coastDistKm(35.42, 139.6, [])).toBe(0);
   });
 });
