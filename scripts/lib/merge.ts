@@ -4,6 +4,8 @@ import type { Spot } from '../../src/types.ts';
 import type { GbifObs } from '../collect-gbif.ts';
 import type { OvertureSpot } from '../collect-overture.ts';
 import type { PrefKids, PrefVisitors } from '../collect-pref.ts';
+import type { WdSpot } from '../collect-wikidata.ts';
+import { wikidataClosure } from './closed.ts';
 import { PointIndex, toSpot } from './score.ts';
 
 type Near = { playgrounds: PointIndex; toilets: PointIndex };
@@ -50,7 +52,7 @@ const municipality = (city?: string) => city?.match(/^.+?[市町村]/)?.[0] ?? c
  * 同じ施設とみなせるスポット：近く（km 以内）で名前が一致するもの。
  * city を渡すと、同じ市町村で 4 文字以上の名前が一致するものも同じとみなす（座標のずれに強くする）
  */
-function findSame(spots: Spot[], lat: number, lon: number, name: string, km: number, city?: string): Spot | undefined {
+export function findSame(spots: Spot[], lat: number, lon: number, name: string, km: number, city?: string): Spot | undefined {
   let best: Spot | undefined;
   let bd = Infinity;
   if (city && normName(name).length >= 4) {
@@ -110,6 +112,38 @@ export function mergeOverture(spots: Spot[], ov: OvertureSpot[], near: Near): nu
     added++;
   }
   return added;
+}
+
+/**
+ * Wikidata の県内施設：OSM に無いものを追加し、閉館・廃止日のあるものは同じ施設を地図から消す
+ * 戻り値：追加数・削除したスポット名
+ */
+export function mergeWikidata(spots: Spot[], items: WdSpot[], near: Near): { added: number; removed: string[] } {
+  let added = 0;
+  const removed: string[] = [];
+  for (const w of items) {
+    const byQ = spots.findIndex((s) => s.wd === w.q);
+    if (wikidataClosure(w.ended)) {
+      // 消すときは確実なものだけ：同じ QID か、1km 以内で同じ名前
+      const i = byQ >= 0 ? byQ : spots.findIndex((s) => normName(s.name) === normName(w.name) && distKm(s.lat, s.lon, w.lat, w.lon) <= 1);
+      if (i >= 0) removed.push(...spots.splice(i, 1).map((s) => `${s.name}（${w.ended} 閉館・廃止）`));
+      continue;
+    }
+    const i = byQ >= 0 ? byQ : spots.indexOf(findSame(spots, w.lat, w.lon, w.name, 0.6, w.city)!);
+    if (i >= 0) {
+      const s = spots[i];
+      if (!s.wd) s.wd = w.q;
+      if (!s.desc && w.desc) s.desc = w.desc;
+      if (!s.web && w.web) s.web = w.web;
+      continue;
+    }
+    const n = toSpot({ id: w.q, lat: w.lat, lon: w.lon, city: w.city, tags: w.tags }, { desc: w.desc, website: w.web, sitelinks: w.sitelinks }, near);
+    if (!n) continue;
+    n.src = 'Wikidata';
+    spots.push(n);
+    added++;
+  }
+  return { added, removed };
 }
 
 /** 入込観光客調査：主要施設の年間来訪者数。来訪者が多いほど「意外性」を下げる */

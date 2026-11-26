@@ -15,6 +15,8 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #172224;
+    --warn-bg: #3a2c14;
+    --warn-ink: #ffcf8a;
     --paper: #1f2d30;
     --ink: #f1e9dc;
     --ink-soft: #a9b8b6;
@@ -413,5 +415,6 @@ select { flex: 1; min-width: 0; }
   .when-label { display: none; }
   #open-viewed { padding: 4px 9px; font-size: 13px; }
 }
+.warn { margin: 4px 0 6px; padding: 6px 8px; border-radius: 6px; font-size: 12px; line-height: 1.5; background: var(--warn-bg, #fff4e0); color: var(--warn-ink, #8a4b00); }
 .src-note { margin: 6px 0 0; font-size: 11px; color: var(--ink-soft); }
 .src-note a { color: inherit; }

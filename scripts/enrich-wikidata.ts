@@ -10,9 +10,11 @@ export interface WdInfo {
   website?: string;
   sitelinks: number;
   jawiki?: string;
+  /** 閉館・廃止された日（P576 解散・廃止 / P3999 閉鎖日 / P582 終了日）YYYY-MM-DD */
+  ended?: string;
 }
 
-interface WdEntity {
+export interface WdEntity {
   missing?: string;
   labels?: Record<string, { value: string }>;
   descriptions?: Record<string, { value: string }>;
@@ -21,6 +23,16 @@ interface WdEntity {
 }
 
 const claim = (e: WdEntity, p: string) => e.claims?.[p]?.[0]?.mainsnak.datavalue?.value as string | undefined;
+
+/** 閉館・廃止日（いずれかのプロパティの時刻値）を YYYY-MM-DD で返す */
+export function endedOf(e: WdEntity): string | undefined {
+  for (const p of ['P576', 'P3999', 'P582']) {
+    const v = e.claims?.[p]?.[0]?.mainsnak.datavalue?.value as { time?: string } | undefined;
+    const m = v?.time?.match(/^\+(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return `${m[1]}-${m[2] === '00' ? '01' : m[2]}-${m[3] === '00' ? '01' : m[3]}`;
+  }
+  return undefined;
+}
 
 export async function enrichWikidata(): Promise<Record<string, WdInfo>> {
   const osm = await readWork<OsmWork>('osm.json');
@@ -46,6 +58,7 @@ export async function enrichWikidata(): Promise<Record<string, WdInfo>> {
           website: claim(e, 'P856'),
           sitelinks: Object.keys(e.sitelinks ?? {}).length,
           jawiki: e.sitelinks?.jawiki?.title,
+          ended: endedOf(e),
         };
       }
     } catch (err) {

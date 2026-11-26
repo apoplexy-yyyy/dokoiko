@@ -54,6 +54,7 @@ export function buildFilters(area: string): string {
   const byKey = new Map<string, Set<string>>();
   const byName = new Map<string, Set<string>>();
   for (const r of categories.rules as { key: string; value: string; nameMatch?: string }[]) {
+    if (r.key === 'dokoiko') continue; // ほかの情報源（Overture）用の疑似タグ
     const [map, k] = r.nameMatch ? [byName, `${r.key}\t${r.nameMatch}`] : [byKey, r.key];
     map.set(k, (map.get(k) ?? new Set()).add(r.value));
   }

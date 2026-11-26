@@ -17,7 +17,9 @@ GitHub Actions（毎週土曜）
   ⑦  GBIF                     … 生きもの観察記録（カブトムシ・クワガタ・ホタル・カワセミなど。CC0/CC BY のみ）を 1km 升目にまとめる
   ⑧  Overture Maps            … Meta・Microsoft・Foursquare などの施設データ。室内遊び場・観光農園・直売所・美術館など、OSM に無いものを追加
   ⑨  神奈川県オープンデータ      … 児童館等（開館時間・対象年齢・URL）、入込観光客調査（主要施設の年間来訪者数 → 有名すぎる所は意外性を下げる）
-        ↓ build-data（スコアリング・重複除去・0.05°タイル分割・広域用おすすめ抽出）
+  ⑩  Wikidata の県内施設       … OSM に無い博物館・遊園地・滝などを追加。閉館・廃止日のある施設は地図から消す
+  ⑪  公式サイトの確認          … 閉館のお知らせ・ドメインの売り出しを探す。つながらないリンクは外す
+        ↓ build-data（スコアリング・重複除去・閉館判定・0.05°タイル分割・広域用おすすめ抽出）
   public/data/kanagawa/{meta.json, news.json, highlights.json, tiles/*.json}
         ↓ vite build
 GitHub Pages（広域表示は highlights.json、拡大時は表示範囲のタイルだけを読む）
@@ -84,6 +86,15 @@ npm run collect:extra            # Overture・県データ・GBIF だけ取り�
 | `config/feeds.json` | 新着情報のRSS/Atom、子供向けキーワード、Google News設定 |
 | `scripts/collect-overture.ts` | Overture のカテゴリ → 疑似 OSM タグの対応、除外する名前 |
 | `scripts/collect-gbif.ts` | 対象にする生きものの一覧 |
+| `scripts/lib/closed.ts` | 閉館・休業の判定ルール |
+
+### 閉館・休業の判定
+
+| 判定 | 根拠 | 扱い |
+| --- | --- | --- |
+| 閉館 | Wikidata の廃止日・閉鎖日、OSM の end_date、名前の「（閉館）」 | 地図から消す |
+| 疑い | 公式サイトの閉館のお知らせ・ドメインの売り出し、Wikipedia の「閉館した」「休館している」、OSM の名前の「（休館）」・メモの「休止中」 | 行く価値を 0.35 倍にし、吹き出しに理由を出す |
+| なし | 公式サイトが 404・ドメイン無し | リンクだけ外す（自治体サイトの引っ越しでよく起きるため） |
 
 ## GitHub Pages で公開
 

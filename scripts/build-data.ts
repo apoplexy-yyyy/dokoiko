@@ -3,7 +3,7 @@ import { readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import region from '../config/region.json' with { type: 'json' };
 import feeds from '../config/feeds.json' with { type: 'json' };
-import { isMain, readWork, writeJson } from './lib/work.ts';
+import { isMain, readWork, writeJson, writeWork } from './lib/work.ts';
 import { PointIndex, dedupe, matchNews, toSpot } from './lib/score.ts';
 import { computeIdf } from './lib/terms.ts';
 import { tileKey, type CityInfo, type Meta, type NewsData, type Spot, type Term } from '../src/types.ts';
@@ -17,7 +17,9 @@ import type { RawNews } from './collect-news.ts';
 import type { OvertureSpot } from './collect-overture.ts';
 import type { PrefKids, PrefVisitors } from './collect-pref.ts';
 import type { GbifObs } from './collect-gbif.ts';
-import { applyVisitors, gbifSpots, mergeOverture, mergePrefKids } from './lib/merge.ts';
+import { applyVisitors, gbifSpots, mergeOverture, mergePrefKids, mergeWikidata } from './lib/merge.ts';
+import type { WdSpot } from './collect-wikidata.ts';
+import { SUSPECT_FACTOR, deadLink, osmClosure, webClosure, wikidataClosure, wikipediaClosure, type Closure, type WebCheck } from './lib/closed.ts';
 import { loadCityOf } from './lib/cities.ts';
 
 const OUT = join('public', 'data', region.id);
@@ -55,10 +57,18 @@ export async function buildData() {
   const near = { playgrounds: new PointIndex(osm.playgrounds), toilets: new PointIndex(osm.toilets) };
 
   const built: Spot[] = [];
+  const removed: string[] = []; // 閉館・廃止で消したスポット
+  const suspects = new Map<string, Closure>(); // スポットID → 疑いの理由
   for (const raw0 of osm.spots) {
     const q = raw0.tags.wikidata ?? match[raw0.id];
     const raw = q && !raw0.tags.wikidata ? { ...raw0, tags: { ...raw0.tags, wikidata: q } } : raw0;
     const w = q ? wd[q] : undefined;
+    const closure = osmClosure(raw.tags) ?? wikidataClosure(w?.ended);
+    if (closure?.level === 'closed') {
+      removed.push(`${raw.tags.name}（${closure.why}）`);
+      continue;
+    }
+    if (closure) suspects.set(raw.id, closure);
     const title = wikiTitle(raw.tags, w);
     const s = toSpot(
       raw,
@@ -81,8 +91,12 @@ export async function buildData() {
     prefKids: mergePrefKids(spots, await readWork<PrefKids[]>('pref-kids.json', []), near),
     overture: mergeOverture(spots, await readWork<OvertureSpot[]>('overture.json', []), near),
     gbif: 0,
+    wikidata: 0,
     visitors: applyVisitors(spots, await readWork<PrefVisitors[]>('pref-visitors.json', [])),
   };
+  const wdm = mergeWikidata(spots, await readWork<WdSpot[]>('wd-spots.json', []), near);
+  extra.wikidata = wdm.added;
+  removed.push(...wdm.removed);
   const gbif = await readWork<GbifObs[]>('gbif.json', []);
   if (gbif.length) {
     const g = gbifSpots(gbif, await loadCityOf());
@@ -90,6 +104,27 @@ export async function buildData() {
     extra.gbif = g.length;
   }
   console.log('[build] 追加した情報源', extra);
+
+  // 閉館・休業の疑い：OSM のメモ・Wikipedia の説明文・公式サイトの閉館のお知らせ。得点を下げて理由を書く
+  // 確認する公式サイトの一覧（リンクを外す前のもの。外したリンクも毎週確認し直す）
+  await writeWork('websites.json', [...new Set(spots.map((s) => s.web).filter((u): u is string => !!u && /^https?:\/\//.test(u)))]);
+  const web = await readWork<Record<string, WebCheck>>('web-check.json', {});
+  let dead = 0;
+  for (const s of spots) {
+    const c = s.web ? web[s.web] : undefined;
+    if (deadLink(c)) {
+      delete s.web; // つながらないリンクは出さない
+      dead++;
+    }
+    const why = suspects.get(s.id) ?? webClosure(c) ?? wikipediaClosure(s.wp?.extract, s.cat);
+    if (!why) continue;
+    s.warn = why.why;
+    s.apl = Math.round(s.apl * SUSPECT_FACTOR * 100) / 100;
+  }
+  const warned = spots.filter((s) => s.warn);
+  console.log(`[build] 閉館・廃止で削除 ${removed.length} 件`, removed);
+  console.log(`[build] 閉館・休業の疑い ${warned.length} 件`, warned.map((s) => `${s.name}：${s.warn}`));
+  console.log(`[build] つながらない公式サイトのリンクを外した ${dead} 件`);
 
   // ニュース照合（市町村名は「横浜市緑区」→「横浜市」の単位にそろえる）
   const municipalities = [...new Set(spots.map((s) => s.city?.match(/^.+?[市町村]/)?.[0] ?? s.city).filter((c): c is string => !!c))];

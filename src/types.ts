@@ -58,7 +58,8 @@ export interface Spot {
   vis?: number; // 年間来訪者数（千人、神奈川県 入込観光客調査）
   ages?: string[]; // 対象年齢（乳幼児・小学生など）
   obs?: { ja: string; n: number; m: number[]; key: number }[]; // 生きもの観察（GBIF）：和名・記録数・記録された月
-  src?: string; // OSM 以外の出典（Overture・神奈川県・GBIF）
+  src?: string; // OSM 以外の出典（Overture・神奈川県・GBIF・Wikidata）
+  warn?: string; // 閉館・休業の疑いとその理由（得点も下げてある）
 }
 
 /** 特徴語と、県全体での珍しさ（IDF = ln(全スポット数 / その語を持つスポット数)） */
