@@ -9,6 +9,7 @@ import { eventItem } from './ui/events';
 import { history } from './ui/history';
 import { CAT, googleSearchUrl } from './ui/labels';
 import { BASEMAPS, DiscoverMap, type RankedSpot } from './ui/map';
+import { perf } from './perf';
 
 /** おすすめ（大きく、必ず表示する）の数 */
 const COUNT = 6;
@@ -82,12 +83,14 @@ function eventPopup(hits: EventHit[]): HTMLElement {
 async function refresh() {
   if (!state.meta) return;
   const req = ++state.req;
+  perf.begin();
   const wide = map.zoom < DETAIL_ZOOM;
   const b = map.bounds();
   const loaded = wide ? await loadHighlights() : await loadBounds(state.meta, b);
   const spots = loaded.filter((s) => !isHidden(s) && !state.off.has(s.cat));
   const [news, events] = await Promise.all([loadNews(), loadEvents()]);
   if (req !== state.req) return; // 古い要求は捨てる
+  perf.mark('読込');
   state.news = news;
   state.events = events;
 
@@ -95,6 +98,7 @@ async function refresh() {
   const allEvents = events?.events ?? [];
   const hits = state.off.has('event') ? [] : eventsInView(allEvents, b, whenDays(state.when));
   map.showEvents(hits, eventPopup);
+  perf.mark('イベント');
 
   const { picks, others, weights } = rankInView(spots, b, {
     count: COUNT,
@@ -109,8 +113,12 @@ async function refresh() {
     // おすすめ以外は得点の高い順に置く（近くに複数あるときは得点の高いものが残る）
     ...others.map((s) => ({ s, w: weights.get(s.id) ?? 0, pick: false })).sort((a, b) => b.w - a.w),
   ];
-  map.showSpots(ranked, spotPopup);
-  for (const s of picks) history.add('seen', s);
+  perf.mark('選ぶ');
+  const shown = map.showSpots(ranked, spotPopup);
+  perf.mark('ピン');
+  history.addMany('seen', picks);
+  perf.mark('履歴');
+  perf.end(`候補 ${spots.length}・ピン ${shown}`);
 
 }
 

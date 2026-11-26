@@ -425,3 +425,6 @@ select { flex: 1; min-width: 0; }
 .warn { margin: 4px 0 6px; padding: 6px 8px; border-radius: 6px; font-size: 12px; line-height: 1.5; background: var(--warn-bg, #fff4e0); color: var(--warn-ink, #8a4b00); }
 .src-note { margin: 6px 0 0; font-size: 11px; color: var(--ink-soft); }
 .src-note a { color: inherit; }
+
+/* ピンごとに配置の計算を閉じ込める（ピンが増減しても、ほかのピンや画面全体を計算し直さない） */
+.spot-pin, .event-pin { contain: layout style; }

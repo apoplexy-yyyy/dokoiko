@@ -7,6 +7,7 @@ import type { Spot } from '../types';
 import type { SavedSpot } from './history';
 import { CAT, shortName } from './labels';
 import { h } from './dom';
+import { perf } from '../perf';
 
 /** ピンと名前ラベルの間隔（px） */
 const LABEL_GAP = 2;
@@ -48,6 +49,8 @@ export class DiscoverMap {
   private otherMarkers: L.Marker[] = [];
   /** 表示中の場所のピン（キー：ID・おすすめか・大きさ）。次に表示するときに使い回す */
   private spotMarkers = new Map<string, L.Marker>();
+  /** 表示中のイベントのピン（キー：会場・イベント） */
+  private eventPins = new Map<string, L.Marker>();
   private timer = 0;
   private baseLayer?: L.TileLayer;
   base = 'osm';
@@ -59,7 +62,8 @@ export class DiscoverMap {
     this.baseLayer?.remove();
     // 場所のデータは OpenStreetMap 由来なので、背景を変えても OSM の出典は残す
     const attribution = b.attribution === OSM ? OSM : `${b.attribution}｜場所のデータ ${OSM}`;
-    this.baseLayer = L.tileLayer(b.url, { maxZoom: 19, maxNativeZoom: b.maxNativeZoom, attribution }).addTo(this.map);
+    // keepBuffer：画面の外の地図画像も多めに残し、戻ったときに白い部分が出にくいようにする
+    this.baseLayer = L.tileLayer(b.url, { maxZoom: 19, maxNativeZoom: b.maxNativeZoom, attribution, keepBuffer: 4 }).addTo(this.map);
     this.baseLayer.bringToBack();
   }
 
@@ -189,6 +193,12 @@ export class DiscoverMap {
    * 候補（番号順）→ イベントの会場名 → そのほかの場所 の順に優先する。
    */
   private declutter() {
+    const t0 = performance.now();
+    this.declutterInner();
+    if (perf.on) console.log(`[perf] ラベルの重なり判定 ${(performance.now() - t0).toFixed(1)}ms`);
+  }
+
+  private declutterInner() {
     const pad = 2;
     const hit = (a: DOMRect, b: DOMRect) =>
       a.left < b.right + pad && b.left < a.right + pad && a.top < b.bottom + pad && b.top < a.bottom + pad;
@@ -332,15 +342,25 @@ export class DiscoverMap {
    * イベントのピン。会場の座標が分かるものは会場ごと、分からないもの（横浜市）は区の中心にまとめる。
    */
   showEvents(hits: EventHit[], popup: (hits: EventHit[]) => HTMLElement) {
-    this.eventLayer.clearLayers();
+    // 前と同じ会場・同じ件数のピンは作り直さずに使い回す
+    const prev = this.eventPins;
+    this.eventPins = new Map();
     this.eventMarkers.clear();
     const groups = new Map<string, EventHit[]>();
     for (const x of hits) {
       const k = x.ev.approx ? `area:${x.ev.city}` : `${x.ev.lat.toFixed(4)},${x.ev.lon.toFixed(4)}`;
       groups.set(k, [...(groups.get(k) ?? []), x]);
     }
-    for (const list of groups.values()) {
+    for (const [k, list] of groups) {
       const ev = list[0].ev;
+      const key = `${k}|${list.map((x) => x.ev.id).join(',')}`;
+      const old = prev.get(key);
+      if (old) {
+        prev.delete(key);
+        this.eventPins.set(key, old);
+        for (const x of list) this.eventMarkers.set(x.ev.id, old);
+        continue;
+      }
       // 会場名（なければイベント名）を添える。長いものは短く
       const name = ev.approx ? `${ev.city.replace(/^横浜市/, '')}のイベント` : (ev.spotName ?? ev.venue ?? ev.title);
       const label = name.length > 14 ? name.slice(0, 14) + '…' : name;
@@ -357,8 +377,10 @@ export class DiscoverMap {
       });
       m.bindPopup(() => popup(list), { maxWidth: 360, minWidth: 260, autoPan: false, className: 'event-popup' });
       m.addTo(this.eventLayer);
+      this.eventPins.set(key, m);
       for (const x of list) this.eventMarkers.set(x.ev.id, m);
     }
+    for (const m of prev.values()) m.remove();
     this.declutterSoon();
   }
 

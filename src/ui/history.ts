@@ -14,21 +14,50 @@ export interface SavedSpot {
 type ListName = 'seen' | 'viewed' | 'want' | 'went';
 const KEY = 'dokoiko:v1:';
 
+// 一覧は読み込んだらメモリに持ち、保存はまとめて後で行う。
+// 地図を動かすたびに「全件を読む→書き換える→全件を保存」を繰り返すと、最大2000件の変換と保存でスマホが引っかかるため
+const cache = new Map<ListName, SavedSpot[]>();
+const dirty = new Set<ListName>();
+let flushTimer = 0;
+
 function read(name: ListName): SavedSpot[] {
-  try {
-    const v = localStorage.getItem(KEY + name);
-    return v ? (JSON.parse(v) as SavedSpot[]) : [];
-  } catch {
-    return [];
+  let list = cache.get(name);
+  if (!list) {
+    try {
+      const v = localStorage.getItem(KEY + name);
+      list = v ? (JSON.parse(v) as SavedSpot[]) : [];
+    } catch {
+      list = [];
+    }
+    cache.set(name, list);
   }
+  return list;
+}
+
+function flush() {
+  flushTimer = 0;
+  for (const name of dirty) {
+    try {
+      localStorage.setItem(KEY + name, JSON.stringify(read(name)));
+    } catch {
+      /* プライベートモード等では保存しない */
+    }
+  }
+  dirty.clear();
 }
 
 function write(name: ListName, list: SavedSpot[]) {
-  try {
-    localStorage.setItem(KEY + name, JSON.stringify(list.slice(-2000)));
-  } catch {
-    /* プライベートモード等では保存しない */
+  cache.set(name, list.slice(-2000));
+  dirty.add(name);
+  // 手が空いたときに保存する（閉じる前には必ず保存）
+  if (!flushTimer) {
+    const ric = (window as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
+    flushTimer = ric ? ric(flush, { timeout: 3000 }) : window.setTimeout(flush, 1000);
   }
+}
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', flush);
+  document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && flush());
 }
 
 const toSaved = (s: Spot): SavedSpot => ({ id: s.id, name: s.name, lat: s.lat, lon: s.lon, cat: s.cat, city: s.city, at: Date.now() });
@@ -42,8 +71,14 @@ export const history = {
     return read(name).some((s) => s.id === id);
   },
   add(name: ListName, spot: Spot) {
-    const list = read(name).filter((s) => s.id !== spot.id);
-    list.push(toSaved(spot));
+    this.addMany(name, [spot]);
+  },
+  /** まとめて追加する（すでにあるものは新しい位置へ） */
+  addMany(name: ListName, spots: Spot[]) {
+    if (!spots.length) return;
+    const ids = new Set(spots.map((s) => s.id));
+    const list = read(name).filter((s) => !ids.has(s.id));
+    list.push(...spots.map(toSaved));
     write(name, list);
   },
   remove(name: ListName, id: string) {
