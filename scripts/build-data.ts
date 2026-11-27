@@ -17,9 +17,9 @@ import type { CommonsWork } from './enrich-commons.ts';
 import type { GeoImageWork } from './enrich-commons-geo.ts';
 import type { RawNews } from './collect-news.ts';
 import type { OvertureSpot } from './collect-overture.ts';
-import type { PrefKids, PrefVisitors } from './collect-pref.ts';
+import { HAMAHUG_PAGE, type BabyCare, type PrefKids, type PrefLibrary, type PrefPark, type PrefVisitors } from './collect-pref.ts';
 import type { GbifObs } from './collect-gbif.ts';
-import { applyVisitors, gbifSpots, mergeOverture, mergePrefKids, mergeWikidata } from './lib/merge.ts';
+import { applyBabyCare, applyVisitors, gbifSpots, mergeOverture, mergePrefKids, mergePrefLibraries, mergePrefParks, mergeWikidata } from './lib/merge.ts';
 import type { WdSpot } from './collect-wikidata.ts';
 import { SUSPECT_FACTOR, deadLink, manualClosure, osmClosure, pastClosure, webClosure, wikidataClosure, wikipediaClosure, type Closure, type WebCheck } from './lib/closed.ts';
 import { loadCityOf } from './lib/cities.ts';
@@ -103,6 +103,9 @@ export async function buildData() {
     gbif: 0,
     wikidata: 0,
     visitors: applyVisitors(spots, await readWork<PrefVisitors[]>('pref-visitors.json', [])),
+    parks: mergePrefParks(spots, await readWork<PrefPark[]>('pref-parks.json', []), near),
+    libraries: mergePrefLibraries(spots, await readWork<PrefLibrary[]>('pref-libraries.json', []), near),
+    babyCare: applyBabyCare(spots, [...(await readWork<BabyCare[]>('baby-hamahug.json', [])), ...(await readWork<BabyCare[]>('baby-passport.json', []))]),
   };
   const wdm = mergeWikidata(spots, await readWork<WdSpot[]>('wd-spots.json', []), near);
   extra.wikidata = wdm.added;
@@ -227,8 +230,9 @@ export async function buildData() {
       { name: 'Wikimedia Commons', license: '各ファイルのライセンス', url: 'https://commons.wikimedia.org/' },
       { name: 'Overture Maps', license: 'CDLA Permissive 2.0（Foursquare 由来は Apache 2.0）', url: 'https://overturemaps.org/' },
       { name: 'GBIF.org 生きもの観察記録', license: 'CC0・CC BY 4.0', url: 'https://www.gbif.org/' },
-      { name: '神奈川県オープンデータ（児童館等・入込観光客調査）', license: 'CC BY 4.0', url: 'https://catalog.opendata.pref.kanagawa.jp/' },
+      { name: '神奈川県オープンデータ（児童館等・公園・図書館・子育て応援パスポート協力施設・入込観光客調査）', license: 'CC BY 4.0', url: 'https://catalog.opendata.pref.kanagawa.jp/' },
       { name: '横浜市オープンデータ（親と子のつどいの広場）', license: 'CC BY', url: 'https://data.city.yokohama.lg.jp/dataset/kodomo_tsudoinohiroba' },
+      { name: '横浜市オープンデータ（ハマハグ協賛店舗・施設）', license: 'CC BY', url: HAMAHUG_PAGE },
       ...feeds.feeds.map((f) => ({ name: f.name + ' 新着情報', license: '各サイトの利用規約', url: new URL(f.url).origin })),
     ],
   };

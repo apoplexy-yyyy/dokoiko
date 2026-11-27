@@ -1,6 +1,11 @@
 // ⑨ 神奈川県オープンデータ（CC BY 4.0）
 //   - 児童館等：開館時間・対象年齢・公式URL。座標が空のものは国土地理院の住所検索で補う
 //   - 入込観光客調査 第4表：主要な観光施設ごとの年間来訪者数（有名すぎるかどうかの判定に使う）
+//   - 公園：遊具・トイレ・水遊び・小動物などの設備（県・市町村の連携データ）
+//   - 図書館：オムツ交換台・授乳室・読み聞かせスペース（県・市町村の連携データ）
+//   - 子育て応援パスポート協力施設：おむつ替え・授乳スペース
+//   横浜市オープンデータ（CC BY）
+//   - 親と子のつどいの広場、ハマハグ協賛店舗・施設（授乳室・おむつ交換台）
 import ExcelJS from 'exceljs';
 import { fetchJson, fetchText } from './lib/http.ts';
 import { isMain, writeWork } from './lib/work.ts';
@@ -202,6 +207,193 @@ async function collectYokohamaTsudoi(cityOf: (lat: number, lon: number) => strin
   return out;
 }
 
+// ---------------- 公園（県・市町村の連携データ。遊具・トイレなどの設備つき、座標なし） ----------------
+
+const PARK_ID = 'd1dd79afd3bcfe4ae56b139f5f7f7bb3';
+const LIBRARY_ID = '7762fb99daa687050cd86e85403dc81e';
+const PASSPORT_ID = '497d10d7e4f8831495e2726cfe9b27a9';
+
+export interface PrefPark {
+  id: string;
+  name: string;
+  city: string; // 所在地から（横浜市泉区 など）
+  lat?: number; // 目立つ公園だけ住所から求める
+  lon?: number;
+  ha?: number;
+  play: boolean; // 遊具あり
+  toilets: boolean;
+  terms: string[]; // 特徴語（ふわふわドーム・水遊び など）
+  hours?: string;
+  web?: string;
+}
+
+const PLAY_COLS = ['スプリング遊具・スイング遊具', '砂場', '複合遊具', 'ブランコ', 'すべり台', 'ジャングルジム', '鉄棒', 'シーソー', 'ターザンロープ', 'ローラースライダー', 'ふわふわドーム'];
+/** 設備の列 → 特徴語 */
+const PARK_TERMS: Record<string, string> = {
+  ふわふわドーム: 'ふわふわドーム',
+  ローラースライダー: 'ローラー滑り台',
+  ターザンロープ: 'ターザンロープ',
+  水遊び: '水遊び',
+  'ウサギ・モルモット': 'ふれあい動物',
+  ハムスター: 'ふれあい動物',
+  ひよこ: 'ふれあい動物',
+  '馬・ポニー': '乗馬',
+  バーベキュー場: 'バーベキュー',
+  芝生広場: '芝生広場',
+  プール: 'プール',
+};
+/** 住所から位置を求めて、スポットに無ければ追加する公園（珍しい設備があるか、1ha 以上で遊具がある） */
+const SPECIAL = ['ふわふわドーム', 'ローラースライダー', '水遊び', 'ウサギ・モルモット', 'ハムスター', 'ひよこ', '馬・ポニー'];
+
+/** 所在地から市区町村（横浜市泉区・足柄上郡開成町→開成町 など） */
+export function cityOfAddress(addr: string): string {
+  const a = addr.replace(/^神奈川県/, '');
+  return a.match(/^(.+?市.+?区|.+?[市町村])/)?.[1]?.replace(/^.+?郡/, '') ?? '';
+}
+
+async function collectParks(): Promise<PrefPark[]> {
+  const csv = (await resources(PARK_ID)).find((r) => r.format.toUpperCase() === 'CSV');
+  if (!csv) throw new Error('公園の CSV が見つかりません');
+  const rows = parseCsv(await fetchText(csv.url, { ttlHours: 24 * 6 }));
+  const head = rows[0].map((h) => h.trim());
+  const col = (name: string) => head.indexOf(name);
+  const out: PrefPark[] = [];
+  for (const r of rows.slice(1)) {
+    if (r.length < head.length - 2) continue;
+    const name = r[col('名称')]?.trim();
+    const addr = r[col('所在地')]?.trim() ?? '';
+    if (!name || !addr) continue;
+    const yes = (k: string) => r[col(k)] === '1';
+    const ha = Number(r[col('面積')]) / 10000 || undefined;
+    const play = PLAY_COLS.some(yes);
+    const terms = [...new Set(Object.entries(PARK_TERMS).filter(([k]) => yes(k)).map(([, v]) => v))];
+    const p: PrefPark = {
+      id: 'pp' + r[col('ID')],
+      name,
+      city: cityOfAddress(addr),
+      ha: ha ? Math.round(ha * 10) / 10 : undefined,
+      play,
+      toilets: yes('トイレ'),
+      terms,
+      hours: [r[col('開園時間')], r[col('休園日')] && `休園：${r[col('休園日')]}`].filter((x) => x && x !== '-').join(' ').slice(0, 120) || undefined,
+      web: /^https?:\/\//.test(r[col('関連リンク')] ?? '') ? r[col('関連リンク')] : undefined,
+    };
+    if (SPECIAL.some(yes) || (play && (ha ?? 0) >= 1)) {
+      const g = await geocode(addr);
+      if (g) [p.lat, p.lon] = [+g[0].toFixed(5), +g[1].toFixed(5)];
+    }
+    out.push(p);
+  }
+  return out;
+}
+
+// ---------------- 赤ちゃん連れの設備（おむつ替え・授乳） ----------------
+
+/** おむつ替え・授乳ができる施設。スポットと名前・場所で照らし合わせて「おむつ・授乳」を付ける */
+export interface BabyCare {
+  name: string;
+  lat?: number;
+  lon?: number;
+  city?: string;
+  src: string;
+}
+
+/** 県の図書館データ（座標・開館時間・オムツ交換台・授乳室・読み聞かせスペース） */
+export interface PrefLibrary {
+  id: string;
+  name: string;
+  lat: number;
+  lon: number;
+  city: string;
+  baby: boolean;
+  story: boolean; // 絵本の読み聞かせスペース
+  web?: string;
+}
+
+async function collectLibraries(cityOf: (lat: number, lon: number) => string | undefined): Promise<PrefLibrary[]> {
+  const csv = (await resources(LIBRARY_ID)).find((r) => r.format.toUpperCase() === 'CSV');
+  if (!csv) throw new Error('図書館の CSV が見つかりません');
+  const rows = parseCsv(await fetchText(csv.url, { ttlHours: 24 * 6 }));
+  const head = rows[0].map((h) => h.trim());
+  const col = (name: string) => head.findIndex((h) => h.startsWith(name));
+  const out: PrefLibrary[] = [];
+  for (const r of rows.slice(1)) {
+    const name = r[col('名称')]?.trim();
+    if (!name) continue;
+    let lat = Number(r[col('緯度')]);
+    let lon = Number(r[col('経度')]);
+    if (!lat || !lon) {
+      const g = r[col('所在地')] ? await geocode(r[col('所在地')]) : undefined;
+      if (!g) continue;
+      [lat, lon] = g;
+    }
+    const city = cityOf(lat, lon);
+    if (!city) continue;
+    out.push({
+      id: 'pl' + r[col('ID')],
+      name,
+      lat: +lat.toFixed(5),
+      lon: +lon.toFixed(5),
+      city,
+      baby: r[col('オムツ交換台')] === '1' || r[col('授乳室')] === '1',
+      story: r[col('絵本読み聞かせスペース')] === '1',
+      web: /^https?:\/\//.test(r[col('URL')] ?? '') ? r[col('URL')] : undefined,
+    });
+  }
+  return out;
+}
+
+/** 横浜市「ハマハグ」協賛店舗・施設（CC BY。授乳室・おむつ交換台の有無と座標つき） */
+export const HAMAHUG_PAGE = 'https://www.city.yokohama.lg.jp/kosodate-kyoiku/kosodateshien/shiensodan/default2020091.html';
+const HAMAHUG_CKAN = 'https://data.city.yokohama.lg.jp/api/3/action/package_show?id=kodomo_default2020091';
+
+async function collectHamahug(): Promise<BabyCare[]> {
+  const r = await fetchJson<{ result: { resources: Resource[] } }>(HAMAHUG_CKAN, { ttlHours: 24 });
+  const csv = r.result.resources.find((x) => x.format.toUpperCase() === 'CSV'); // 先頭が最新
+  if (!csv) throw new Error('ハマハグの CSV が見つかりません');
+  // この CSV は Shift_JIS
+  const res = await fetch(csv.url, { headers: { 'User-Agent': UA } });
+  if (!res.ok) throw new Error(`HTTP ${res.status} ${csv.url}`);
+  const rows = parseCsv(new TextDecoder('shift_jis').decode(await res.arrayBuffer()));
+  const head = rows[0].map((h) => h.trim());
+  const col = (name: string) => head.findIndex((h) => h.startsWith(name));
+  const C = { name: col('施設: 施設名'), lat: col('施設位置 (緯度)'), lon: col('施設位置 (経度)'), room: col('授乳室'), space: col('授乳スペース'), diaper: col('おむつ交換台') };
+  const has = (v: string | undefined) => !!v && v !== '0' && v !== '';
+  const out: BabyCare[] = [];
+  for (const row of rows.slice(1)) {
+    const name = row[C.name]?.trim();
+    const lat = Number(row[C.lat]);
+    const lon = Number(row[C.lon]);
+    if (!name || !lat || !lon) continue;
+    if (!(has(row[C.room]) || has(row[C.space]) || has(row[C.diaper]))) continue;
+    out.push({ name, lat: +lat.toFixed(5), lon: +lon.toFixed(5), src: 'ハマハグ' });
+  }
+  return out;
+}
+
+/** 県「子育て応援パスポート」協力施設（CC BY。おむつ替え・授乳スペースの有無。座標なし・2021 年時点） */
+async function collectPassport(): Promise<BabyCare[]> {
+  const file = (await resources(PASSPORT_ID)).find((r) => /xlsx/i.test(r.format));
+  if (!file) throw new Error('子育て応援パスポートの xlsx が見つかりません');
+  const res = await fetch(file.url, { headers: { 'User-Agent': UA } });
+  if (!res.ok) throw new Error(`HTTP ${res.status} ${file.url}`);
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(await res.arrayBuffer());
+  const ws = wb.worksheets[0];
+  const head = (ws.getRow(1).values as ExcelJS.CellValue[]).map((v) => cellText(v).trim());
+  const col = (name: string) => head.indexOf(name);
+  const C = { name: col('施設名'), city: col('地域'), diaper: col('おむつ替えスペース'), nurse: col('授乳・調乳スペース') };
+  const out: BabyCare[] = [];
+  ws.eachRow((row, i) => {
+    if (i === 1) return;
+    const v = (c: number) => cellText(row.getCell(c).value).trim();
+    const name = v(C.name);
+    if (!name || !(v(C.diaper) === 'あり' || v(C.nurse) === 'あり')) return;
+    out.push({ name, city: v(C.city), src: '子育て応援パスポート' });
+  });
+  return out;
+}
+
 export async function collectPref() {
   const cityOf = await loadCityOf();
   const kids = await collectKids(cityOf);
@@ -217,6 +409,20 @@ export async function collectPref() {
   const visitors = await collectVisitors();
   await writeWork('pref-visitors.json', visitors);
   console.log(`[pref] 入込観光客（主要施設） ${visitors.length} 件`);
+  // 以下はどれも失敗しても続ける（無ければ統合で飛ばす）
+  const optional = async <T>(label: string, file: string, run: () => Promise<T[]>) => {
+    try {
+      const list = await run();
+      await writeWork(file, list);
+      console.log(`[pref] ${label} ${list.length} 件`);
+    } catch (e) {
+      console.warn(`[pref] ${label} 失敗（スキップ）: ${(e as Error).message}`);
+    }
+  };
+  await optional('公園', 'pref-parks.json', collectParks);
+  await optional('図書館', 'pref-libraries.json', () => collectLibraries(cityOf));
+  await optional('ハマハグ（おむつ・授乳）', 'baby-hamahug.json', collectHamahug);
+  await optional('子育て応援パスポート（おむつ・授乳）', 'baby-passport.json', collectPassport);
   return { kids, visitors };
 }
 

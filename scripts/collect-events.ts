@@ -29,7 +29,7 @@ const clean = (s: string | undefined) => (s ?? '').replace(/\s+/g, ' ').trim();
 const hm = (t: string | undefined) => (t ? t.slice(0, 5) : '');
 
 /** 大人向け・事務的なものを除く */
-const EXCLUDE = /両親学級|母親学級|指導者|養成|説明会|研修|講習会|講演|セミナー|フォーラム|相談会|会議|入札|募集は終了|終了しました|中止|延期|職員|ボランティア募集|虐待|啓発|オンライン/;
+const EXCLUDE = /両親学級|母親学級|指導者|養成|説明会|研修|講習会|講演|セミナー|フォーラム|相談会|会議|入札|募集は終了|終了しました|中止|延期|職員|ボランティア募集|虐待|啓発|オンライン|コツ/;
 /** 期間中ほぼ毎日ある長期の募集・展示は、出かける理由になりにくいので除く */
 const MAX_DAYS = 30;
 
@@ -137,6 +137,11 @@ interface YkRow {
   column4: string; // パス
 }
 
+/** 子供向けのイベントらしい題名（ジャンルが「子育て」でないもの用） */
+/** 題名で拾うときに除く（大人向けのおはなし会・読み聞かせボランティアの講座など） */
+const YK_ADULT_TITLE = /大人|ボランティア|入門講座|権利/;
+export const YK_KIDS_TITLE = /おはなし会|お話し?会|おはなしかい|読み聞かせ|えほん|絵本|親子|こども|子ども|子供|キッズ|赤ちゃん|乳幼児|小学生|ファミリー/;
+
 /** 横浜市の開催日表記を日付の配列にする。31日を超える期間（長期の募集・展示）は除く */
 export function parseYkDates(s: string): string[] {
   const out: string[] = [];
@@ -155,7 +160,8 @@ export function parseYkDates(s: string): string[] {
 
 export function fromYokohama(r: YkRow, today: string, until: string, cities: CityInfo[]): EventItem | null {
   const title = clean(r.column0);
-  if (!title || !/子育て/.test(r.column2) || EXCLUDE.test(title)) return null;
+  // ジャンル「子育て」のほか、図書館・地区センターのおはなし会などはジャンル「その他」に入っているので題名でも拾う
+  if (!title || !(/子育て/.test(r.column2) || (YK_KIDS_TITLE.test(title) && !YK_ADULT_TITLE.test(title))) || EXCLUDE.test(title)) return null;
   const days = parseYkDates(r.column3).filter((d) => d >= today && d <= until);
   if (!days.length || days.length > MAX_DAYS) return null;
   const area = clean(r.column1).split(/[,、]/)[0];

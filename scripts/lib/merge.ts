@@ -6,7 +6,7 @@ export { normName };
 import type { Spot } from '../../src/types.ts';
 import type { GbifObs } from '../collect-gbif.ts';
 import type { OvertureSpot } from '../collect-overture.ts';
-import type { PrefKids, PrefVisitors } from '../collect-pref.ts';
+import type { BabyCare, PrefKids, PrefLibrary, PrefPark, PrefVisitors } from '../collect-pref.ts';
 import type { WdSpot } from '../collect-wikidata.ts';
 import { wikidataClosure } from './closed.ts';
 import { PointIndex, toSpot } from './score.ts';
@@ -165,6 +165,136 @@ export function mergeWikidata(spots: Spot[], items: WdSpot[], near: Near): { add
     added++;
   }
   return { added, removed };
+}
+
+const addFeature = (s: Spot, f: Spot['f'][number], kid = 0) => {
+  if (s.f.includes(f)) return;
+  s.f.push(f);
+  s.kid = Math.round(Math.min(1, s.kid + kid) * 100) / 100;
+};
+const addTerms = (s: Spot, terms: string[]) => {
+  if (terms.length) s.tl = [...new Set([...(s.tl ?? []), ...terms])];
+};
+
+const PARK_CATS: Spot['cat'][] = ['park', 'playground', 'nature'];
+/** 公園の名前を比べる形に（空白・県立など・「ケ」「ヶ」「ヵ」の違いをそろえる） */
+export const parkKey = (name: string) =>
+  name
+    .normalize('NFKC')
+    .replace(/\s+/g, '')
+    .replace(/^(神奈川)?(県立|市立|町立|村立)/, '')
+    .replace(/[ケヵｹ]/g, 'ヶ');
+/** 市区町村を比べる形に（横浜市保土ケ谷区と横浜市保土ヶ谷区を同じに） */
+const cityKey = (city?: string) => (city ?? '').normalize('NFKC').replace(/[ケヵｹ]/g, 'ヶ');
+
+/**
+ * 県の公園データ：名前と市町村が合うスポットに遊具・トイレ・設備（特徴語）を足す。
+ * 住所から位置を求めた目立つ公園（珍しい設備・1ha 以上で遊具）は、スポットに無ければ追加する
+ */
+export function mergePrefParks(spots: Spot[], parks: PrefPark[], near: Near): { matched: number; added: number } {
+  let matched = 0;
+  let added = 0;
+  const apply = (s: Spot, p: PrefPark) => {
+    if (p.play) addFeature(s, 'playground', 0.1);
+    if (p.toilets) addFeature(s, 'toilets', 0.05);
+    addTerms(s, p.terms);
+    if (!s.hours && p.hours) s.hours = p.hours;
+    if (!s.web && p.web) s.web = p.web;
+  };
+  // 公園は「〇〇第三公園」「〇〇第五公園」のように一字違いの別の公園が多いので、名前が正規化して完全に同じで、
+  // 同じ区・市町村の公園・遊び場・自然のスポットだけを同じとみなす（位置の分かる公園は 3km 以内）
+  const byKey = new Map<string, Spot[]>();
+  for (const s of spots)
+    if (PARK_CATS.includes(s.cat)) {
+      const k = parkKey(s.name) + '|' + cityKey(s.city);
+      byKey.set(k, [...(byKey.get(k) ?? []), s]);
+    }
+  for (const p of parks) {
+    const cands = byKey.get(parkKey(p.name) + '|' + cityKey(p.city)) ?? [];
+    // 住所から求めた位置はずれることがあるので、同じ区・市町村に同じ名前の公園が 1 つだけなら位置によらず同じとみなす
+    const s = cands.length === 1 ? cands[0] : cands.find((c) => p.lat == null || distKm(p.lat, p.lon!, c.lat, c.lon) <= 3);
+    if (s) {
+      apply(s, p);
+      matched++;
+      continue;
+    }
+    if (p.lat == null || p.lon == null) continue;
+    // 近くに似た名前のスポットがあれば追加しない（「〇〇公園 花の苑地」のような一部の区域の名前のもの）
+    if (findSame(spots, p.lat, p.lon, p.name, 0.5)) continue;
+    const n = toSpot({ id: p.id, lat: p.lat, lon: p.lon, city: p.city, ha: p.ha, tags: { leisure: 'park', name: p.name } }, { website: p.web }, near);
+    if (!n) continue;
+    apply(n, p);
+    n.src = '神奈川県';
+    spots.push(n);
+    added++;
+  }
+  return { matched, added };
+}
+
+/** 県の図書館データ：おむつ・授乳と読み聞かせスペースを足す。スポットに無い図書館は追加する */
+export function mergePrefLibraries(spots: Spot[], libs: PrefLibrary[], near: Near): { matched: number; added: number } {
+  let matched = 0;
+  let added = 0;
+  for (const l of libs) {
+    // 図書館どうしが 300m 以内に並ぶことはまず無いので、近くの図書館は名前が違っても同じとみなす（「港北図書館・菊名地区センター」など）
+    let s =
+      findSame(spots, l.lat, l.lon, l.name, 0.5, l.city) ??
+      spots.find((c) => c.cat === 'library' && Math.abs(c.lat - l.lat) < 0.004 && Math.abs(c.lon - l.lon) < 0.005 && distKm(l.lat, l.lon, c.lat, c.lon) <= 0.3);
+    if (!s) {
+      const n = toSpot({ id: l.id, lat: l.lat, lon: l.lon, city: l.city, tags: { amenity: 'library', name: l.name } }, { website: l.web }, near);
+      if (!n) continue;
+      n.src = '神奈川県';
+      spots.push(n);
+      added++;
+      s = n;
+    } else matched++;
+    if (l.baby) addFeature(s, 'baby', 0.05);
+    if (l.story) addTerms(s, ['読み聞かせ']);
+    if (!s.web && l.web) s.web = l.web;
+  }
+  return { matched, added };
+}
+
+/** 施設名を比べる形に（空白・かっこ・「横浜市立」「県立」などを除く） */
+const facilityKey = (name: string) =>
+  name
+    .normalize('NFKC')
+    .replace(/[\s「」『』"“”・]/g, '')
+    .replace(/\(.*?\)/g, '')
+    .replace(/^(神奈川県立|横浜市立|川崎市立|相模原市立|横浜市|県立|市立)/, '')
+    .replace(/[ケヵｹ]/g, 'ヶ');
+const SHOP = /(薬局|医院|クリニック|病院|歯科|店)$/;
+/** 同じ施設の名前か：同じか、片方がもう片方をほぼ丸ごと含む（短い方が長い方の 7 割以上） */
+export function sameFacility(a: string, b: string): boolean {
+  const x = facilityKey(a);
+  const y = facilityKey(b);
+  if (x.length < 3 || y.length < 3) return false;
+  if (x === y) return true;
+  const [s, l] = x.length < y.length ? [x, y] : [y, x];
+  return l.includes(s) && s.length / l.length >= 0.7;
+}
+
+/**
+ * おむつ替え・授乳ができる施設（ハマハグ・子育て応援パスポート）：同じ施設のスポットに「おむつ・授乳」を付ける。
+ * お店や病院が多く、「〇〇駅前薬局」と「〇〇駅前公園」のような取り違えが起きやすいので、名前はほぼ同じものだけ。
+ * 座標があれば 200m 以内、無ければ同じ区・市町村の中で探す
+ */
+export function applyBabyCare(spots: Spot[], list: BabyCare[]): number {
+  let hit = 0;
+  for (const b of list) {
+    const s = spots.find((c) => {
+      if (b.lat != null && b.lon != null) {
+        if (Math.abs(c.lat - b.lat) > 0.003 || Math.abs(c.lon - b.lon) > 0.004 || distKm(b.lat, b.lon, c.lat, c.lon) > 0.2) return false;
+      } else if (!b.city || cityKey(c.city) !== cityKey(b.city)) return false;
+      // お店・病院は名前が同じときだけ（「よみうりランド薬局」を「よみうりランド」としない）
+      if (SHOP.test(b.name.trim())) return facilityKey(c.name) === facilityKey(b.name);
+      return sameFacility(c.name, b.name);
+    });
+    if (!s || s.f.includes('baby')) continue;
+    addFeature(s, 'baby', 0.05);
+    hit++;
+  }
+  return hit;
 }
 
 /** 入込観光客調査：主要施設の年間来訪者数。来訪者が多いほど「意外性」を下げる */

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { eventsInView, whenDays } from '../src/discover/events';
-import { attachSpots, fromKawasaki, parseYkDates, venueName } from '../scripts/collect-events';
+import { attachSpots, fromKawasaki, fromYokohama, parseYkDates, venueName } from '../scripts/collect-events';
 import type { EventItem, Spot } from '../src/types';
 
 describe('whenDays', () => {
@@ -58,5 +58,16 @@ describe('収集', () => {
     const e = fromKawasaki(kw('幼児'), '2026-11-25', '2026-12-31')!;
     attachSpots([e], [other, spot]);
     expect(e.spot).toBe('n1');
+  });
+});
+
+describe('横浜市のイベント', () => {
+  const cities = [{ name: '横浜市中区', lat: 35.44, lon: 139.64, count: 0 }, { name: '横浜市港北区', lat: 35.52, lon: 139.63, count: 0 }];
+  const row = (title: string, genre: string) => ({ column0: title, column1: '港北区', column2: genre, column3: '2026-12-05'.replace(/-/g, '/'), column4: '/kohoku/x.html' });
+  it('ジャンルが「その他」でも、おはなし会は拾い、大人向けは拾わない', () => {
+    expect(fromYokohama(row('親子で楽しむおはなし会', 'その他'), '2026-12-01', '2026-12-31', cities)?.title).toBe('親子で楽しむおはなし会');
+    expect(fromYokohama(row('大人のためのおはなし会', 'その他'), '2026-12-01', '2026-12-31', cities)).toBeNull();
+    expect(fromYokohama(row('学校ボランティア読み聞かせ入門講座', 'その他'), '2026-12-01', '2026-12-31', cities)).toBeNull();
+    expect(fromYokohama(row('企画展示「園芸文化」', 'その他'), '2026-12-01', '2026-12-31', cities)).toBeNull();
   });
 });

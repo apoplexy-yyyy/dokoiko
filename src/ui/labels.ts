@@ -22,7 +22,7 @@ export const FEAT: Record<Feature, { label: string; icon: string }> = {
   toilets: { label: 'トイレ有', icon: '🚻' },
   free: { label: '無料', icon: '🆓' },
   wheelchair: { label: 'バリアフリー', icon: '♿' },
-  baby: { label: 'おむつ替え', icon: '🍼' },
+  baby: { label: 'おむつ・授乳', icon: '🍼' },
   indoor: { label: '屋内', icon: '☔' },
   large: { label: '広い', icon: '🏞️' },
 };

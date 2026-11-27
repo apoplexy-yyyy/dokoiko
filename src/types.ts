@@ -22,7 +22,7 @@ export type Feature =
   | 'toilets' // トイレあり（近く）
   | 'free' // 無料
   | 'wheelchair' // バリアフリー
-  | 'baby' // おむつ替え
+  | 'baby' // おむつ替え・授乳
   | 'indoor' // 屋内（雨の日OK）
   | 'large'; // 広い（2ha以上）
 
