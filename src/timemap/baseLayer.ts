@@ -3,7 +3,20 @@
 //   タイル 1 枚を MESH×MESH のマスの三角形に分け、頂点を歪めた位置へ貼る（中心駅からの方角はそのまま、距離だけ伸縮）。
 // 地図を動かしている間は canvas ごと動き、止まったら描き直す。拡大・縮小の間は canvas ごと拡大縮小する
 import L from 'leaflet';
-import { NONE, ringKm, warpLatLng, type TimeTable, type Warp } from './warp';
+import { NONE, ringKm, type TimeTable, type Warp } from './warp';
+
+/**
+ * いまの見え方（src/timemap/index.ts の TimeMap が持つ）。アニメーション中は変化前と変化後の位置を混ぜる
+ *   pos：緯度経度 → いま描く位置の緯度経度
+ *   main：輪・駅・タイルの見当に使う歪め方（変化後、時間地図をやめるときは変化前）
+ *   fade：時間の輪の濃さ（始めるときは 0→1、やめるときは 1→0）
+ */
+export interface WarpView {
+  pos(lat: number, lon: number): [number, number];
+  readonly main: Warp;
+  readonly fade: number;
+  readonly animating: boolean;
+}
 
 const MESH = 8;
 /** 1 回に描くタイル数の上限（スマホで重くなりすぎないように） */
@@ -27,10 +40,17 @@ const latTile = (lat: number, z: number) => {
 
 type Pt = [number, number];
 
+/** 読み込んだ地図の画像（時間地図をやめても覚えておき、次に始めるときはすぐ描けるようにする） */
+const TILES = new Map<string, { img: HTMLImageElement; ok: boolean; failed?: boolean }>();
+/** いま地図に載っている層（画像が届いたら描き直す） */
+let active: WarpBaseLayer | null = null;
+
 export class WarpBaseLayer extends L.Layer {
   private canvas!: HTMLCanvasElement;
   private ctx!: CanvasRenderingContext2D;
-  private tiles = new Map<string, { img: HTMLImageElement; ok: boolean }>();
+  /** 直近の描画で、まだ届いていない画像の数 */
+  private pending = 0;
+  private readyWaiters: (() => void)[] = [];
   private nw = L.latLng(0, 0);
   private drawnZoom = 0;
   private frame = 0;
@@ -40,7 +60,7 @@ export class WarpBaseLayer extends L.Layer {
 
   constructor(
     private tt: TimeTable,
-    private warp: Warp,
+    private view: WarpView,
     private tileUrl: string,
     private maxNativeZoom: number,
     private onStation: (i: number) => void,
@@ -48,16 +68,16 @@ export class WarpBaseLayer extends L.Layer {
     super();
   }
 
-  setWarp(w: Warp) {
-    this.warp = w;
-    this.redraw();
+  /** アニメーションの 1 フレーム（すぐ描く） */
+  drawNow() {
+    cancelAnimationFrame(this.frame);
+    this.draw();
   }
 
   setTileUrl(url: string, maxNativeZoom: number) {
     if (url === this.tileUrl) return;
     this.tileUrl = url;
     this.maxNativeZoom = maxNativeZoom;
-    this.tiles.clear();
     this.redraw();
   }
 
@@ -66,6 +86,7 @@ export class WarpBaseLayer extends L.Layer {
     pane.style.zIndex = '250'; // 通常の地図の画像（200）より上、ピン（610）より下
     pane.style.pointerEvents = 'none';
     this.canvas = L.DomUtil.create('canvas', 'warp-canvas leaflet-zoom-animated', pane);
+    active = this;
     this.ctx = this.canvas.getContext('2d')!;
     map.on('moveend viewreset resize', this.redraw, this);
     map.on('zoomanim', this.animateZoom, this);
@@ -81,6 +102,7 @@ export class WarpBaseLayer extends L.Layer {
     map.off('zoom', this.onZoomFrame, this);
     map.off('click', this.onClick, this);
     cancelAnimationFrame(this.frame);
+    if (active === this) active = null;
     this.canvas.remove();
     return this;
   }
@@ -125,19 +147,23 @@ export class WarpBaseLayer extends L.Layer {
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const toPx = (lat: number, lon: number): Pt => {
-      const [a, b] = warpLatLng(this.warp, lat, lon);
+      const [a, b] = this.view.pos(lat, lon);
       const p = map.latLngToContainerPoint([a, b]);
       return [p.x + PAD, p.y + PAD];
     };
+    this.pending = 0;
     this.drawTiles(toPx, cw, ch);
     this.drawOverlay(toPx);
+    if (this.pending === 0) this.readyWaiters.splice(0).forEach((f) => f());
   }
 
   /** 背景の地図の画像を歪めて貼る */
   private drawTiles(toPx: (lat: number, lon: number) => Pt, cw: number, ch: number) {
     const map = this._map;
-    const w = this.warp;
+    const w = this.view.main;
     const tt = this.tt;
+    // 動いている間は三角形を粗くして軽くする
+    const mesh = this.view.animating ? 4 : MESH;
     // 代表的な伸縮率（駅の伸縮率の中央の値）。描くタイルの範囲とズームレベルの見当に使う
     const ss = w.pts.map((p) => p.s).sort((a, b) => a - b);
     const typical = ss.length ? ss[Math.floor(ss.length / 2)] : 1;
@@ -194,11 +220,11 @@ export class WarpBaseLayer extends L.Layer {
         if (cx1 + px < 0 || cx0 - px > cw || cy1 + py < 0 || cy0 - py > ch) continue;
         const grid: Pt[][] = [];
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-        for (let j = 0; j <= MESH; j++) {
+        for (let j = 0; j <= mesh; j++) {
           const row: Pt[] = [];
-          const lat = tileLat(ty + j / MESH, z);
-          for (let i = 0; i <= MESH; i++) {
-            const p = toPx(lat, tileLng(tx + i / MESH, z));
+          const lat = tileLat(ty + j / mesh, z);
+          for (let i = 0; i <= mesh; i++) {
+            const p = toPx(lat, tileLng(tx + i / mesh, z));
             row.push(p);
             if (p[0] < minX) minX = p[0];
             if (p[0] > maxX) maxX = p[0];
@@ -210,10 +236,13 @@ export class WarpBaseLayer extends L.Layer {
         if (maxX < 0 || minX > cw || maxY < 0 || minY > ch) continue;
         if (++count > MAX_TILES) return;
         const t = this.tile(z, tx, ty);
-        if (!t.ok) continue;
-        const step = 256 / MESH;
-        for (let j = 0; j < MESH; j++)
-          for (let i = 0; i < MESH; i++) {
+        if (!t.ok) {
+          if (!t.failed) this.pending++;
+          continue;
+        }
+        const step = 256 / mesh;
+        for (let j = 0; j < mesh; j++)
+          for (let i = 0; i < mesh; i++) {
             const s00: Pt = [i * step, j * step];
             const s10: Pt = [(i + 1) * step, j * step];
             const s01: Pt = [i * step, (j + 1) * step];
@@ -226,21 +255,37 @@ export class WarpBaseLayer extends L.Layer {
   }
 
   private tile(z: number, x: number, y: number) {
-    const key = `${z}/${x}/${y}`;
-    let t = this.tiles.get(key);
+    const src = this.tileUrl.replace('{z}', String(z)).replace('{x}', String(x)).replace('{y}', String(y));
+    let t = TILES.get(src);
     if (!t) {
       const img = new Image();
-      const rec = { img, ok: false };
+      const rec: { img: HTMLImageElement; ok: boolean; failed?: boolean } = { img, ok: false };
       img.onload = () => {
         rec.ok = true;
-        this.redraw();
+        active?.redraw();
       };
-      img.src = this.tileUrl.replace('{z}', String(z)).replace('{x}', String(x)).replace('{y}', String(y));
-      this.tiles.set(key, rec);
+      img.onerror = () => {
+        rec.failed = true;
+        active?.redraw();
+      };
+      img.src = src;
+      TILES.set(src, rec);
       t = rec;
-      if (this.tiles.size > 1500) this.tiles.delete(this.tiles.keys().next().value!);
+      if (TILES.size > 1500) TILES.delete(TILES.keys().next().value!);
     }
     return t;
+  }
+
+  /** 画面に見えている地図の画像が届くまで待つ（長くても ms まで） */
+  whenReady(ms = 1500): Promise<void> {
+    return new Promise((resolve) => {
+      const timer = setTimeout(resolve, ms);
+      this.readyWaiters.push(() => {
+        clearTimeout(timer);
+        resolve();
+      });
+      this.redraw();
+    });
   }
 
   /** 三角形 (s0,s1,s2)（タイル画像のピクセル）を (d0,d1,d2)（canvas）に貼る */
@@ -283,7 +328,8 @@ export class WarpBaseLayer extends L.Layer {
     const map = this._map;
     const ctx = this.ctx;
     const tt = this.tt;
-    const w = this.warp;
+    const w = this.view.main;
+    const fade = this.view.fade;
     const cs = getComputedStyle(document.documentElement);
     const accent = cs.getPropertyValue('--accent').trim() || '#e8743b';
     const ink = cs.getPropertyValue('--ink').trim() || '#1f3a3d';
@@ -304,16 +350,16 @@ export class WarpBaseLayer extends L.Layer {
       ctx.beginPath();
       ctx.arc(c[0], c[1], r, 0, Math.PI * 2);
       ctx.strokeStyle = paper;
-      ctx.globalAlpha = 0.8;
+      ctx.globalAlpha = 0.8 * fade;
       ctx.lineWidth = 5;
       ctx.stroke();
       ctx.strokeStyle = accent;
-      ctx.globalAlpha = 0.9;
+      ctx.globalAlpha = 0.9 * fade;
       ctx.lineWidth = 2.5;
       ctx.setLineDash([10, 6]);
       ctx.stroke();
       ctx.setLineDash([]);
-      ctx.globalAlpha = 1;
+      ctx.globalAlpha = fade;
       ctx.lineWidth = 3;
       ctx.strokeStyle = paper;
       ctx.strokeText(`${m}分`, c[0], c[1] - r - 4);
@@ -371,12 +417,12 @@ export class WarpBaseLayer extends L.Layer {
       const d = Math.hypot(s.x - PAD - p.x, s.y - PAD - p.y);
       if (d <= HIT && (!best || d < best.d)) best = { i: s.i, d };
     }
-    if (!best) return;
+    if (!best || this.view.animating) return;
     const i = best.i;
     setTimeout(() => {
       const open = (this._map as unknown as { _popup?: L.Popup })._popup;
       if (open && this._map.hasLayer(open)) return;
-      if (i !== this.warp.center) this.onStation(i);
+      if (i !== this.view.main.center) this.onStation(i);
     }, 0);
   }
 }

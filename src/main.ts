@@ -44,6 +44,10 @@ const state = {
   tm: null as TimeMap | null,
   /** 時間地図の間：歪めた位置に置き換える前のスポット（カードには元の位置のものを渡す） */
   orig: new Map<string, Spot>(),
+  /** 時間地図のアニメーション中に動かすピン（動かし始めに一度だけ選ぶ） */
+  animRanked: null as RankedSpot[] | null,
+  /** 時間地図をやめるアニメーション中 */
+  tmStopping: false,
 };
 
 let map: DiscoverMap;
@@ -123,7 +127,9 @@ async function refresh() {
 
   // イベント（先に置き、場所のピンはそれを避ける）
   const allEvents = (events?.events ?? []).map((e) => (tm ? tm.place(e) : e));
-  const hits = state.off.has('event') ? [] : eventsInView(allEvents, b, whenDays(state.when));
+  // 時間地図のアニメーション中はイベントを出さない（止まったら出す）
+  const animating = !!tm?.animating;
+  const hits = state.off.has('event') || animating ? [] : eventsInView(allEvents, b, whenDays(state.when));
   map.showEvents(hits, eventPopup);
   perf.mark('イベント');
 
@@ -141,6 +147,13 @@ async function refresh() {
     ...others.map((s) => ({ s, w: weights.get(s.id) ?? 0, pick: false })).sort((a, b) => b.w - a.w),
   ];
   perf.mark('選ぶ');
+  if (animating) {
+    // 選ぶのは一度だけにし、各フレームでは位置だけを動かして描く（drawTimeMapFrame）
+    state.animRanked = ranked;
+    drawTimeMapFrame();
+    return;
+  }
+  state.animRanked = null;
   const shown = map.showSpots(ranked, spotPopup);
   perf.mark('ピン');
   history.addMany('seen', picks);
@@ -172,6 +185,7 @@ function setWhen(w: When) {
 /** 時間地図を始める・やめる（初めて使うときに src/timemap を読み込む） */
 async function setTimeMap(on: boolean) {
   const btn = $('#tm-toggle');
+  if (state.tmStopping) return; // やめるアニメーションの途中
   if (on && !state.tm) {
     btn.setAttribute('aria-busy', 'true');
     try {
@@ -182,8 +196,10 @@ async function setTimeMap(on: boolean) {
         map.baseTile,
         history.prefs.get<string | null>('tmCenter', null),
         onTimeMapChange,
+        drawTimeMapFrame,
       );
       map.setBaseVisible(false);
+      state.tm.begin();
     } catch (e) {
       console.error(e);
       status('時間地図のデータを読み込めませんでした。時間をおいてもう一度お試しください。');
@@ -191,10 +207,21 @@ async function setTimeMap(on: boolean) {
       btn.removeAttribute('aria-busy');
     }
   } else if (!on && state.tm) {
-    state.tm.stop();
-    state.tm = null;
-    state.orig.clear();
-    map.setBaseVisible(true);
+    // 実際の地図へ戻るアニメーションが終わってから、通常の地図に切り替える
+    state.tmStopping = true;
+    btn.setAttribute('aria-pressed', 'false');
+    history.prefs.set('tm', false);
+    map.closePopup();
+    state.tm.stop(() => {
+      state.tm = null;
+      state.tmStopping = false;
+      state.orig.clear();
+      state.animRanked = null;
+      map.setBaseVisible(true);
+      showTimeMapInfo();
+      refresh();
+    });
+    return;
   }
   btn.setAttribute('aria-pressed', String(!!state.tm));
   history.prefs.set('tm', !!state.tm);
@@ -204,7 +231,23 @@ async function setTimeMap(on: boolean) {
   refresh();
 }
 
-/** 中心駅が変わったとき */
+/** 時間地図のアニメーションの 1 フレーム：選んであるピンを、いまの位置（変化前と変化後の間）に描く */
+function drawTimeMapFrame() {
+  const tm = state.tm;
+  const list = state.animRanked;
+  if (!tm || !list) return;
+  map.showEvents([], eventPopup);
+  map.showSpots(
+    list.map((r) => {
+      const o = state.orig.get(r.s.id) ?? r.s;
+      const [lat, lon] = tm.pos(o.lat, o.lon);
+      return { ...r, s: { ...r.s, lat, lon } };
+    }),
+    spotPopup,
+  );
+}
+
+/** 中心駅が変わったとき（アニメーションが止まったときも） */
 function onTimeMapChange() {
   if (!state.tm) return;
   history.prefs.set('tmCenter', state.tm.centerName);
