@@ -201,10 +201,14 @@ function setupAbout() {
 function setupLegend() {
   const box = $('#kinds');
   const buttons = new Map<string, HTMLButtonElement>();
+  // すべてオフのときは、地図が空になった理由が分かるよう地図の中央にお知らせを出す
+  const notice = $('#all-off-notice');
+  const showNotice = () => notice.toggleAttribute('hidden', !KINDS.every((k) => state.off.has(k.key)));
   const sync = () => {
     for (const [k, b] of buttons) b.setAttribute('aria-pressed', String(!state.off.has(k)));
     history.prefs.set('off', [...state.off]);
     state.skip.clear();
+    showNotice();
     refresh();
   };
   for (const k of KINDS) {
@@ -230,6 +234,11 @@ function setupLegend() {
     for (const k of KINDS) state.off.add(k.key);
     sync();
   });
+  $('#all-off-restore').addEventListener('click', () => {
+    state.off.clear();
+    sync();
+  });
+  showNotice(); // 前回すべてオフのまま閉じた場合も出す
   // スマホでは地図を広く使えるよう、凡例は閉じておく
   if (window.matchMedia('(max-width: 700px)').matches) $<HTMLDetailsElement>('#legend').open = false;
 }

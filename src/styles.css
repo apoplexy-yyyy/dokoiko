@@ -314,6 +314,17 @@ select { flex: 1; min-width: 0; }
 .kind-icon { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--c); background: var(--paper); font-size: 11px; flex: none; }
 .legend-note { margin: 6px 0 0; font-size: 11px; color: var(--ink-soft); line-height: 1.5; }
 
+/* 表示する種類がすべてオフのときのお知らせ（地図の中央） */
+.all-off-notice {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 650;
+  width: max-content; max-width: calc(100% - 40px); text-align: center;
+  background: color-mix(in srgb, var(--paper) 96%, transparent); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow);
+  padding: 14px 18px; font-size: 14px;
+}
+.all-off-notice[hidden] { display: none; }
+.all-off-notice p { margin: 0 0 10px; font-weight: 700; word-break: keep-all; overflow-wrap: anywhere; }
+.all-off-notice button { border: 0; border-radius: 999px; padding: 6px 16px; background: var(--accent); color: var(--accent-ink); font-size: 13px; font-weight: 700; }
+
 /* 地図の下の情報 */
 .area-info {
   position: absolute; left: 10px; bottom: 22px; z-index: 500; max-width: min(560px, calc(100% - 20px));
