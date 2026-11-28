@@ -316,7 +316,7 @@ select { flex: 1; min-width: 0; }
 
 /* 表示する種類がすべてオフのときのお知らせ（地図の中央） */
 .all-off-notice {
-  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 650;
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 550; /* 表示の設定（600）の裏側 */
   width: max-content; max-width: calc(100% - 40px); text-align: center;
   background: color-mix(in srgb, var(--paper) 96%, transparent); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow);
   padding: 14px 18px; font-size: 14px;
