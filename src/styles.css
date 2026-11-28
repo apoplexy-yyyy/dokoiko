@@ -328,13 +328,6 @@ select { flex: 1; min-width: 0; }
 /* 時間地図 */
 .tm-btn[aria-pressed='true'] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .tm-btn[aria-busy='true'] { opacity: 0.6; cursor: progress; }
-.tm-info {
-  position: absolute; top: 10px; left: 50px; z-index: 560; max-width: calc(100% - 300px); margin: 0;
-  background: color-mix(in srgb, var(--paper) 94%, transparent); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow);
-  padding: 6px 12px; font-size: 13px; font-weight: 700;
-}
-.tm-info[hidden] { display: none; }
-@media (max-width: 700px) { .tm-info { max-width: calc(100% - 170px); font-size: 12px; } .tm-hint { display: none; } }
 .tm-time { margin: 0 0 8px; padding: 6px 10px; border-radius: 10px; background: var(--accent-soft); font-size: 13px; font-weight: 700; }
 
 /* 地図の下の情報 */
@@ -462,3 +455,13 @@ select { flex: 1; min-width: 0; }
 
 /* canvas のピンの拡大・縮小に使う見えない目印 */
 .pin-probe { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; }
+/* スマホではヘッダーを 2 行に：1 行目にタイトルとボタン、2 行目にキャッチコピー・版 */
+@media (max-width: 700px) {
+  .topbar .brand-name { font-size: 17px; }
+  .topbar .brand-actions { gap: 3px; }
+  .topbar .seg button { padding: 3px 5px; }
+  .topbar .brand-actions .ghost-btn { padding: 4px 7px; font-size: 12.5px; }
+  .topbar .brand-actions .icon-btn { padding: 4px 6px; }
+  .when-label { font-size: 12px; }
+  .topbar .ver { margin-left: 6px; }
+}

@@ -218,7 +218,6 @@ async function setTimeMap(on: boolean) {
       state.orig.clear();
       state.animRanked = null;
       map.setBaseVisible(true);
-      showTimeMapInfo();
       refresh();
     });
     return;
@@ -226,7 +225,6 @@ async function setTimeMap(on: boolean) {
   btn.setAttribute('aria-pressed', String(!!state.tm));
   history.prefs.set('tm', !!state.tm);
   if (state.tm) history.prefs.set('tmCenter', state.tm.centerName);
-  showTimeMapInfo();
   map.closePopup();
   refresh();
 }
@@ -251,19 +249,8 @@ function drawTimeMapFrame() {
 function onTimeMapChange() {
   if (!state.tm) return;
   history.prefs.set('tmCenter', state.tm.centerName);
-  showTimeMapInfo();
   map.closePopup();
   refresh();
-}
-
-function showTimeMapInfo() {
-  const el = $('#tm-info');
-  el.toggleAttribute('hidden', !state.tm);
-  if (state.tm)
-    el.replaceChildren(
-      `🚃 ${state.tm.centerName}駅から電車で（休日の日中の平均・推定）`,
-      h('span', { class: 'tm-hint' }, '。駅を押すと中心が変わります'),
-    );
 }
 
 /** 閲覧履歴：吹き出しを開いた場所（新しい順） */

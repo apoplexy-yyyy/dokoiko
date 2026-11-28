@@ -55,7 +55,7 @@ export class WarpBaseLayer extends L.Layer {
   private drawnZoom = 0;
   private frame = 0;
   /** 描いた駅の位置（押したときの判定用。canvas の座標） */
-  private stationPts: { i: number; x: number; y: number }[] = [];
+  private stationPts: { i: number; x: number; y: number; lb?: [number, number, number, number] }[] = [];
   private origin = L.point(0, 0);
 
   constructor(
@@ -107,17 +107,23 @@ export class WarpBaseLayer extends L.Layer {
     return this;
   }
 
-  /** 拡大・縮小のアニメーション：canvas ごと地図の画像と同じように拡大縮小する */
+  /**
+   * 拡大・縮小のアニメーション：canvas ごと地図の画像と同じように拡大縮小する。
+   * canvas は画面の左上（nw）より PAD だけ外側から描いているので、その余白も拡大率に合わせて伸び縮みさせる
+   * （余白をそのまま引くと、拡大で左上・縮小で右下に背景がずれ、ピンがずれて見える）
+   */
   private animateZoom(e: L.ZoomAnimEvent) {
     const map = this._map as L.Map & { _latLngToNewLayerPoint(ll: L.LatLng, z: number, c: L.LatLng): L.Point };
-    L.DomUtil.setTransform(this.canvas, map._latLngToNewLayerPoint(this.nw, e.zoom, e.center).subtract([PAD, PAD]), map.getZoomScale(e.zoom, this.drawnZoom));
+    const scale = map.getZoomScale(e.zoom, this.drawnZoom);
+    L.DomUtil.setTransform(this.canvas, map._latLngToNewLayerPoint(this.nw, e.zoom, e.center).subtract([PAD * scale, PAD * scale]), scale);
   }
 
   /** 指 2 本での拡大・縮小の間 */
   private onZoomFrame() {
     const map = this._map;
     if (!map || (map as unknown as { _animatingZoom?: boolean })._animatingZoom) return;
-    L.DomUtil.setTransform(this.canvas, map.latLngToLayerPoint(this.nw).subtract([PAD, PAD]), map.getZoomScale(map.getZoom(), this.drawnZoom));
+    const scale = map.getZoomScale(map.getZoom(), this.drawnZoom);
+    L.DomUtil.setTransform(this.canvas, map.latLngToLayerPoint(this.nw).subtract([PAD * scale, PAD * scale]), scale);
   }
 
   redraw() {
@@ -341,9 +347,31 @@ export class WarpBaseLayer extends L.Layer {
       const q = map.latLngToContainerPoint([w.lat0, w.lon0]);
       return Math.hypot(p.x - q.x, p.y - q.y);
     })();
+    // 「何分」の文字の位置：輪の一番上。そこが画面の外なら、輪の上で画面の端から一番離れた点
+    // （画面の内側に深く入る点。同じくらいなら左側＝表示の設定と重ならない側）。輪が画面に入っていなければ出さない
+    const size = map.getSize();
+    const M = 14; // 画面の端からの余白（px）
+    const margin = (x: number, y: number) => Math.min(x - PAD, PAD + size.x - x, y - PAD, PAD + size.y - y);
+    const labelAt = (r: number): Pt | null => {
+      const top: Pt = [c[0], c[1] - r - 4];
+      if (margin(...top) >= M) return top;
+      let best: Pt | null = null;
+      let bm = M;
+      for (let k = 0; k < 120; k++) {
+        const t = Math.PI + (k / 120) * Math.PI * 2; // 左から回る
+        const p: Pt = [c[0] + Math.cos(t) * r, c[1] + Math.sin(t) * r];
+        const m = margin(...p);
+        if (m > bm + 0.5) {
+          bm = m;
+          best = p;
+        }
+      }
+      return best;
+    };
     ctx.save();
     ctx.font = `600 12px ${cs.getPropertyValue('font-family') || 'sans-serif'}`;
     ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
     for (const m of RINGS) {
       const r = ringKm(w, m) * pxPerKm;
       // 色の多い地図の上でも見えるよう、白い縁取りの上に太めの点線
@@ -359,12 +387,14 @@ export class WarpBaseLayer extends L.Layer {
       ctx.setLineDash([10, 6]);
       ctx.stroke();
       ctx.setLineDash([]);
+      const at = labelAt(r);
+      if (!at) continue;
       ctx.globalAlpha = fade;
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 4;
       ctx.strokeStyle = paper;
-      ctx.strokeText(`${m}分`, c[0], c[1] - r - 4);
+      ctx.strokeText(`${m}分`, at[0], at[1]);
       ctx.fillStyle = accent;
-      ctx.fillText(`${m}分`, c[0], c[1] - r - 4);
+      ctx.fillText(`${m}分`, at[0], at[1]);
     }
     ctx.restore();
     // 路線
@@ -389,7 +419,8 @@ export class WarpBaseLayer extends L.Layer {
       if (i !== w.center && tt.t[w.center * tt.n + i] === NONE) continue;
       const [x, y] = pts[i];
       if (x < -20 || y < -20 || x > this.canvas.width || y > this.canvas.height) continue;
-      this.stationPts.push({ i, x, y });
+      const hit: { i: number; x: number; y: number; lb?: [number, number, number, number] } = { i, x, y };
+      this.stationPts.push(hit);
       ctx.beginPath();
       ctx.arc(x, y, i === w.center ? 7 : 3.5, 0, Math.PI * 2);
       ctx.fillStyle = i === w.center ? accent : paper;
@@ -404,6 +435,8 @@ export class WarpBaseLayer extends L.Layer {
         ctx.strokeText(label, x + 6, y - 6);
         ctx.fillStyle = ink;
         ctx.fillText(label, x + 6, y - 6);
+        // 駅名も押せるように、描いた範囲（左・上・幅・高さ）を覚える
+        hit.lb = [x + 4, y - 19, ctx.measureText(label).width + 4, 17];
       }
     }
     ctx.restore();
@@ -413,9 +446,13 @@ export class WarpBaseLayer extends L.Layer {
   private onClick(e: L.LeafletMouseEvent) {
     const p = e.containerPoint;
     let best: { i: number; d: number } | undefined;
+    const px = p.x + PAD;
+    const py = p.y + PAD;
     for (const s of this.stationPts) {
-      const d = Math.hypot(s.x - PAD - p.x, s.y - PAD - p.y);
+      const d = Math.hypot(s.x - px, s.y - py);
       if (d <= HIT && (!best || d < best.d)) best = { i: s.i, d };
+      // 駅名の上（丸より遠いので、丸に当たっていないときだけ）
+      else if (s.lb && px >= s.lb[0] && px <= s.lb[0] + s.lb[2] && py >= s.lb[1] && py <= s.lb[1] + s.lb[3] && (!best || best.d > HIT)) best = { i: s.i, d: HIT + 1 };
     }
     if (!best || this.view.animating) return;
     const i = best.i;
