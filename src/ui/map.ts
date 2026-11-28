@@ -111,12 +111,18 @@ export class DiscoverMap {
   setBase(key: string) {
     const b = BASEMAPS[key] ?? BASEMAPS.osm;
     this.base = BASEMAPS[key] ? key : 'osm';
+    if (this.baseHidden && this.baseLayer) this.map.attributionControl?.removeAttribution(this.baseLayer.getAttribution?.() ?? '');
     this.baseLayer?.remove();
     // 場所のデータは OpenStreetMap 由来なので、背景を変えても OSM の出典は残す
     const attribution = b.attribution === OSM ? OSM : `${b.attribution}｜場所のデータ ${OSM}`;
     // keepBuffer：画面の外の地図画像も多めに残し、戻ったときに白い部分が出にくいようにする
     this.baseLayer = L.tileLayer(b.url, { maxZoom: 19, maxNativeZoom: b.maxNativeZoom, attribution, keepBuffer: 4 }).addTo(this.map);
     this.baseLayer.bringToBack();
+    // 時間地図の間に地図の種類を変えたときは、外したままにする
+    if (this.baseHidden) {
+      this.baseLayer.remove();
+      this.map.attributionControl?.addAttribution(attribution);
+    }
   }
 
   constructor(el: HTMLElement, center: [number, number], zoom: number, base: string, onMove: () => void) {
@@ -726,5 +732,36 @@ export class DiscoverMap {
 
   invalidate() {
     this.map.invalidateSize();
+  }
+
+  // ---- 時間地図（src/timemap）から使う ----
+
+  /** Leaflet の地図そのもの */
+  get leaflet(): L.Map {
+    return this.map;
+  }
+
+  /** 今の地図の種類のタイルの URL（時間地図で歪めて描くのに使う） */
+  get baseTile(): { url: string; maxNativeZoom: number } {
+    const b = BASEMAPS[this.base] ?? BASEMAPS.osm;
+    return { url: b.url, maxNativeZoom: b.maxNativeZoom };
+  }
+
+  /**
+   * 通常の地図の画像を外す・戻す（時間地図の間は歪めた画像を代わりに描く）。
+   * 外している間も画像を読み込まないよう層ごと外し、出典の表示だけ残す
+   */
+  private baseHidden = false;
+  setBaseVisible(on: boolean) {
+    if (on === !this.baseHidden || !this.baseLayer) return;
+    const attr = this.baseLayer.getAttribution?.() ?? '';
+    this.baseHidden = !on;
+    if (on) {
+      this.map.attributionControl?.removeAttribution(attr);
+      this.baseLayer.addTo(this.map).bringToBack();
+    } else {
+      this.baseLayer.remove();
+      this.map.attributionControl?.addAttribution(attr);
+    }
   }
 }

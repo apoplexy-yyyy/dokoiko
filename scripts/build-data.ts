@@ -233,6 +233,7 @@ export async function buildData() {
       { name: '神奈川県オープンデータ（児童館等・公園・図書館・子育て応援パスポート協力施設・入込観光客調査）', license: 'CC BY 4.0', url: 'https://catalog.opendata.pref.kanagawa.jp/' },
       { name: '横浜市オープンデータ（親と子のつどいの広場）', license: 'CC BY', url: 'https://data.city.yokohama.lg.jp/dataset/kodomo_tsudoinohiroba' },
       { name: '横浜市オープンデータ（ハマハグ協賛店舗・施設）', license: 'CC BY', url: HAMAHUG_PAGE },
+      { name: '時間地図の電車の所要時間（distortMap の推定。OpenStreetMap・国土数値情報・Wikipedia から）', license: 'ODbL・CC BY 4.0・CC BY-SA 4.0', url: 'https://apoplexy-yyyy.github.io/distortMap/' },
       ...feeds.feeds.map((f) => ({ name: f.name + ' 新着情報', license: '各サイトの利用規約', url: new URL(f.url).origin })),
     ],
   };

@@ -64,6 +64,15 @@ export async function loadBounds(meta: Meta, b: Bounds): Promise<Spot[]> {
 }
 
 /**
+ * 全タイルを読み込む（時間地図用。歪めた地図では、画面に見えている範囲が実際の緯度経度の範囲と合わないため）。
+ * 読み込んだタイルは通常の地図と共有する
+ */
+export async function loadAllTiles(meta: Meta): Promise<Spot[]> {
+  const lists = await Promise.all(meta.tiles.map(loadTile));
+  return lists.flat();
+}
+
+/**
  * 表示範囲のまわり（1タイル分）を、手が空いたときに先読みしておく。
  * 次に地図を動かしたときに通信を待たずに済む（スマホでは初回の読み込みに 200ms ほどかかるため）
  */

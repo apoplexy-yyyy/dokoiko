@@ -21,6 +21,7 @@
           <div class="brand-actions">
             <span class="when-label">🗓️<span> イベント</span></span>
             <div class="seg" id="when" role="group" aria-label="イベントの時期"></div>
+            <button class="ghost-btn tm-btn" id="tm-toggle" type="button" aria-pressed="false" title="選んだ駅からの電車の時間に合わせて地図を歪める">時間地図</button>
             <button class="ghost-btn" id="open-viewed" type="button" title="閲覧履歴">履歴</button>
             <button class="ghost-btn icon-btn" id="open-about" type="button" aria-label="このサイトについて・出典">ⓘ</button>
           </div>
@@ -30,6 +31,7 @@
 
       <main class="map-wrap" aria-label="地図">
         <div id="map"></div>
+        <p class="tm-info" id="tm-info" role="status" hidden></p>
         <div class="all-off-notice" id="all-off-notice" role="status" hidden>
           <p>表示の設定で、<wbr />すべての種類がオフになっています</p>
           <button type="button" id="all-off-restore">すべてオンにする</button>

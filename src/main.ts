@@ -1,5 +1,6 @@
 import './styles.css';
-import { DETAIL_ZOOM, loadBounds, loadEvents, loadHighlights, loadMeta, loadNews, prefetchAround } from './data/loader';
+import { DETAIL_ZOOM, loadAllTiles, loadBounds, loadEvents, loadHighlights, loadMeta, loadNews, prefetchAround } from './data/loader';
+import type { TimeMap } from './timemap';
 import { eventsInView, WHEN_LABEL, whenDays, type EventHit, type When } from './discover/events';
 import { rankInView, todaySeed } from './discover/pick';
 import type { EventsData, Meta, NewsData, NewsItem, Spot } from './types';
@@ -39,6 +40,10 @@ const state = {
   req: 0,
   news: null as NewsData | null,
   events: null as EventsData | null,
+  /** 時間地図（ボタンを押している間だけ） */
+  tm: null as TimeMap | null,
+  /** 時間地図の間：歪めた位置に置き換える前のスポット（カードには元の位置のものを渡す） */
+  orig: new Map<string, Spot>(),
 };
 
 let map: DiscoverMap;
@@ -57,15 +62,31 @@ function newsFor(spot: Spot, news: NewsData | null): { spotNews: NewsItem[]; cit
 }
 
 /** 場所のピンを押したときの吹き出し（カード） */
-function spotPopup(s: Spot): HTMLElement {
+function spotPopup(shown: Spot): HTMLElement {
+  const s = state.tm ? (state.orig.get(shown.id) ?? shown) : shown;
   history.add('viewed', s); // 閲覧履歴（吹き出しを開いた場所）
-  return renderCard(s, {
+  const card = renderCard(s, {
     index: -1,
     tags: (s.t ?? []).map((i) => state.meta!.terms[i]).filter((t) => t && t.idf >= 1.5).map((t) => t.label),
     ...newsFor(s, state.news),
     events: (state.events?.events ?? []).filter((e) => e.spot === s.id),
     onFocus: () => {},
   });
+  // 時間地図の間は、中心駅からの時間を先頭に出す
+  const tm = state.tm;
+  if (tm) {
+    const r = tm.minutesTo(s.lat, s.lon);
+    card.prepend(
+      h(
+        'p',
+        { class: 'tm-time' },
+        r
+          ? `🚃 ${tm.centerName}駅から電車で約${r.min}分（${r.via}駅から歩いて。休日の日中の平均・推定）`
+          : `🚃 ${tm.centerName}駅から電車で行ける駅が近くにありません`,
+      ),
+    );
+  }
+  return card;
 }
 
 /** イベントのピンを押したときの吹き出し */
@@ -86,8 +107,14 @@ async function refresh() {
   perf.begin();
   const wide = map.zoom < DETAIL_ZOOM;
   const b = map.bounds();
-  const loaded = wide ? await loadHighlights() : await loadBounds(state.meta, b);
-  const spots = loaded.filter((s) => !isHidden(s) && !state.off.has(s.cat));
+  const tm = state.tm;
+  // 時間地図の間は、全部のスポットを歪めた位置に置き換え、画面の範囲（歪めた地図）で選ぶ
+  const loaded = wide ? await loadHighlights() : tm ? await loadAllTiles(state.meta) : await loadBounds(state.meta, b);
+  let spots = loaded.filter((s) => !isHidden(s) && !state.off.has(s.cat));
+  if (tm) {
+    state.orig = new Map(spots.map((s) => [s.id, s]));
+    spots = spots.map((s) => tm.place(s));
+  }
   const [news, events] = await Promise.all([loadNews(), loadEvents()]);
   if (req !== state.req) return; // 古い要求は捨てる
   perf.mark('読込');
@@ -95,7 +122,7 @@ async function refresh() {
   state.events = events;
 
   // イベント（先に置き、場所のピンはそれを避ける）
-  const allEvents = events?.events ?? [];
+  const allEvents = (events?.events ?? []).map((e) => (tm ? tm.place(e) : e));
   const hits = state.off.has('event') ? [] : eventsInView(allEvents, b, whenDays(state.when));
   map.showEvents(hits, eventPopup);
   perf.mark('イベント');
@@ -120,6 +147,7 @@ async function refresh() {
   perf.mark('履歴');
   perf.end(`${FX.size ? `fx=${[...FX].join(',')}｜` : ''}候補 ${spots.length}・ピン ${shown}（新規 ${map.created}）
   ピンの内訳 ${map.pinStats}`);
+  if (tm) return; // 時間地図では全部読み込んでいる
   if (!wide) prefetchAround(state.meta, b);
   // 詳しい表示の一歩手前では、拡大したときに出る範囲（画面の中心まわり）を先に読んでおく
   else if (map.zoom >= DETAIL_ZOOM - 1) {
@@ -137,6 +165,62 @@ function setWhen(w: When) {
   history.prefs.set('when', w);
   $('#when').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.when === w)));
   refresh();
+}
+
+// ---------------- 時間地図 ----------------
+
+/** 時間地図を始める・やめる（初めて使うときに src/timemap を読み込む） */
+async function setTimeMap(on: boolean) {
+  const btn = $('#tm-toggle');
+  if (on && !state.tm) {
+    btn.setAttribute('aria-busy', 'true');
+    try {
+      const { TimeMap } = await import('./timemap');
+      state.tm = await TimeMap.start(
+        `${import.meta.env.BASE_URL}data/kanagawa/timemap.json`,
+        map.leaflet,
+        map.baseTile,
+        history.prefs.get<string | null>('tmCenter', null),
+        onTimeMapChange,
+      );
+      map.setBaseVisible(false);
+    } catch (e) {
+      console.error(e);
+      status('時間地図のデータを読み込めませんでした。時間をおいてもう一度お試しください。');
+    } finally {
+      btn.removeAttribute('aria-busy');
+    }
+  } else if (!on && state.tm) {
+    state.tm.stop();
+    state.tm = null;
+    state.orig.clear();
+    map.setBaseVisible(true);
+  }
+  btn.setAttribute('aria-pressed', String(!!state.tm));
+  history.prefs.set('tm', !!state.tm);
+  if (state.tm) history.prefs.set('tmCenter', state.tm.centerName);
+  showTimeMapInfo();
+  map.closePopup();
+  refresh();
+}
+
+/** 中心駅が変わったとき */
+function onTimeMapChange() {
+  if (!state.tm) return;
+  history.prefs.set('tmCenter', state.tm.centerName);
+  showTimeMapInfo();
+  map.closePopup();
+  refresh();
+}
+
+function showTimeMapInfo() {
+  const el = $('#tm-info');
+  el.toggleAttribute('hidden', !state.tm);
+  if (state.tm)
+    el.replaceChildren(
+      `🚃 ${state.tm.centerName}駅から電車で（休日の日中の平均・推定）`,
+      h('span', { class: 'tm-hint' }, '。駅を押すと中心が変わります'),
+    );
 }
 
 /** 閲覧履歴：吹き出しを開いた場所（新しい順） */
@@ -278,7 +362,10 @@ async function init() {
   baseSel.addEventListener('change', () => {
     map.setBase(baseSel.value);
     history.prefs.set('base', baseSel.value);
+    const t = map.baseTile;
+    state.tm?.setTile(t.url, t.maxNativeZoom);
   });
+  $('#tm-toggle').addEventListener('click', () => setTimeMap(!state.tm));
   setupLegend();
   setupWhen();
 
@@ -304,7 +391,9 @@ async function init() {
   // フォント読み込み等でレイアウトが変わった後にタイルを描き直す
   requestAnimationFrame(() => map.invalidate());
   document.fonts?.ready.then(() => map.invalidate());
-  refresh();
+  // 前回、時間地図のまま閉じたときは時間地図で始める
+  if (history.prefs.get<boolean>('tm', false)) setTimeMap(true);
+  else refresh();
 }
 
 init();
